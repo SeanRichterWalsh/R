@@ -1,0 +1,138 @@
+---
+title: "My First R Markdown Report"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+author: "Sean Walsh"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: false
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+
+## Introduction
+
+This report analyses some data and can be circulated to stakeholders and management. These reports are very clean and an effective way of communicating results between data scientists and also to stakeholders. 
+
+This report covers the following points:
+
+* Pont 1:
+* Point 2:
+* Point 3:
+* Point 4:
+
+**Note that these results are from the study period 21 June 2018 to 17 September 2018.**
+
+```{r setup, include = F, warning = F, message = F}
+library(dplyr)
+library(dygraphs)
+library(xts)
+library(ggplot2)
+library(readxl)
+
+# Set root directory 
+knitr::opts_knit$set(root.dir = "~/Desktop/Data_Viz_Workshop")
+
+# Read in data
+churn <- read_excel("test_dfXL.xlsx",
+                    sheet = 1)
+
+timeseries <- read_excel("test_dfXL.xlsx",
+                         sheet = 2)
+```
+  
+  
+## Point 1
+
+Some text on Point 1 here...  
+
+```{r point1, echo = F}
+# dygraphs is an open-source JavaScript charting library. The R package provides an interface to dygraphs.
+# Very clean interactive graphics which can be embedded beautifully into reports, webpages and dashboards.
+
+m.xts <- xts(lead(timeseries$Male), timeseries$Date) 
+f.xts <- xts(lead(timeseries$Female), timeseries$Date)
+
+# Cbind together for plotting
+all <- cbind(male = m.xts, female = f.xts)
+
+# Modify
+dygraph(all, main = "Male and female population in Nulland (2013)") %>%
+  dyLegend(show = "always",
+           labelsSeparateLines = F,
+           width = 500) %>%
+  dyOptions(drawGrid = T) %>%
+  dySeries("male", color = "#6CAEE0", strokeWidth = 3) %>%
+  dySeries("female", color = "#00306A", strokeWidth = 3) %>%
+  dyAxis("y", label = "Population",
+         valueFormatter = 'function(d){return d.toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",");}',
+         axisLabelFormatter = 'function(d){return d.toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",");}',
+         axisLabelWidth = 70) %>%
+  dyEvent("2013-05-01", "Recovery", labelLoc = "bottom")
+```
+
+## Point 2
+
+Some text on Point 2 here...  
+
+```{r point2, echo = F}
+# Note how it can be used with dplyr's pipe operator
+dygraph(all, main = "Male and female population in Nulland (2013)") %>%
+  dyRangeSelector()
+```
+
+  
+## Point 3
+
+Some text on Point 3 here...  
+
+```{r point3, echo = F}
+# Scatterplot with additional information on diamond cut
+ggplot(data = diamonds, 
+       aes(x = carat,
+           y = sqrt(price),
+           colour = cut)) +
+  geom_jitter(alpha = 0.5) +
+  xlab("carat") +
+  ylab("sqrt(price)") +
+  scale_colour_discrete(name = " ") +
+  ggtitle("Linear relationship between diamond price and carat",
+          subtitle = "Source: diamonds dataset from the ggplot2 package") +
+  theme_minimal()
+```
+
+
+## Point 4
+
+Some text on Point 4 here...  
+
+```{r point4, echo = F}
+# Boxplots without outliers
+ggplot(data = diamonds, 
+       aes(x = cut,
+           y = price)) +
+  geom_boxplot(outlier.shape = NA,
+               width = 0.25,
+               fill = "#6CAEE0") +
+  theme_bw() +
+  ggtitle("Diamond price by cut",
+          subtitle = "Source: diamonds dataset from the ggplot2 package")
+```
+
+
+## References
+
+JJ Allaire, Yihui Xie, Jonathan McPherson, Javier Luraschi, Kevin Ushey, Aron Atkins, Hadley
+Wickham, Joe Cheng and Winston Chang (2018). rmarkdown: Dynamic Documents for R. R package version
+1.9. https://CRAN.R-project.org/package=rmarkdown
+
+Yihui Xie (2018). knitr: A General-Purpose Package for Dynamic Report Generation in R. R package
+version 1.20.
+
+
+
