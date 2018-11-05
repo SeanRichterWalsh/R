@@ -1,0 +1,487 @@
+---
+title: "Month-End Retail Churn Performance: July 2018"
+output: 
+  flexdashboard::flex_dashboard:
+    source_code: NULL
+    orientation: rows
+    theme: "yeti"
+    vertical_layout: fill
+---
+
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<style>                     
+.navbar {
+  background-color:#00306A;
+  border-color:black;
+}
+.navbar-brand {
+color:white!important;
+}
+.dygraph-axis-label {
+  font-size: 11px;
+}
+</style> 
+
+```{r setup, include = F}
+#--------------------------
+# GLIMPSE 1.0
+# Built: June 2018
+#--------------------------
+
+# Load up libraries (freeze dependencies using packrat once complete)
+library(readxl)
+library(ROracle)
+library(dplyr)
+library(broom)
+library(forcats)
+library(reshape2)
+library(stringr)
+library(ggplot2)
+library(dygraphs)
+library(plotly)
+library(xts)
+library(scales)
+library(flexdashboard)
+Sys.setenv(TZ = "IST")
+
+#----------------------------------------------------------
+#### TO BE RENDERED ON THE FIRST DAY OF EACH NEW MONTH ####
+#----------------------------------------------------------
+
+## THIS DASHBOARD IS MEANT TO BE A MONTH-END PERFORMANCE CHECK ##
+## AN ANNUALISED MONTHLY CHURN RATE CONSISTENTLY LOWER THAN THE PREVIOUS YEAR'S ACTUAL ANNUAL CHURN RATE IS THE GOAL ##
+## AT YEAR-END THE GOAL IS TO HAVE AN ANNUAL TOTAL CHURN RATE LOWER THAN THE PREVIOUS YEAR'S ANNUAL TOTAL CHURN RATE ##
+
+# Set root directory 
+knitr::opts_knit$set(root.dir = "~/analytics_dashboard")
+
+# Import weekly customer numbers and gains/losses data from KPI_CN_RESULTS
+# Always check that dates match between SQL data warehouse and R import!
+drv <- dbDriver("Oracle")
+con <- dbConnect(drv,
+                 username = "bge_mktg",
+                 password = "c0der",
+                 dbname = "ESMULORA1:1521/ESOAAD1.es.ie")
+
+sql <- "select * from KPI_CN_RESULTS"
+weekly_customers <- dbGetQuery(con, sql)
+dbDisconnect(con)
+rm(con, drv, sql)
+
+# Arrange in order of descending date so the most recent observation is always in the first row
+weekly_customers <- weekly_customers %>% arrange(desc(WEEK_END))
+
+# Gas customer numbers data
+gas_numbers <- weekly_customers %>%
+  select(WEEK_END,
+         RES_GAS_GAIN,
+         RES_GAS_LOSS,
+         RES_GAS_SA)
+
+# Elec customer numbers data
+elec_numbers <- weekly_customers %>%
+  select(WEEK_END,
+         RES_ELEC_GAIN,
+         RES_ELEC_LOSS,
+         RES_ELEC_SA)
+
+# Gas customer numbers monthly summary (churn metric refers to monthly churn)
+gas_churn <- gas_numbers %>%
+  mutate(Month = as.yearmon(WEEK_END)) %>%
+  group_by(Month) %>%
+  summarise(Losses = sum(RES_GAS_LOSS),
+            Closing = RES_GAS_SA[1]) %>%
+  arrange(desc(Month)) %>%
+  ungroup() %>%
+  mutate(Opening = lead(Closing),
+         Gains = Losses + (Closing - Opening),
+         MeanBase = (Opening + Closing) / 2,
+         Churn = Losses / MeanBase * 12)
+
+# Elec customer numbers monthly summary (churn metric refers to monthly churn)
+elec_churn <- elec_numbers %>%
+  mutate(Month = as.yearmon(WEEK_END)) %>%
+  group_by(Month) %>%
+  summarise(Losses = sum(RES_ELEC_LOSS),
+            Closing = RES_ELEC_SA[1]) %>%
+  arrange(desc(Month)) %>%
+  ungroup() %>%
+  mutate(Opening = lead(Closing),
+         Gains = Losses + (Closing - Opening),
+         MeanBase = (Opening + Closing) / 2,
+         Churn = Losses / MeanBase * 12)
+```
+
+Row
+--------------------------------------
+
+### Gas & Elec SAs
+
+```{r}
+# Extracted from the weekly customer numbers table KPI_CN_RESULTS
+# Ensure the correct month is indexed!
+total_accounts <- weekly_customers[1, ] %>%
+  summarise(TotalAccounts = RES_GAS_SA + RES_ELEC_SA) %>%
+  pull()
+
+valueBox(comma(total_accounts), 
+         icon = "fa-file",
+         color = "#6CAEE0")
+```
+
+### Total premises
+
+```{r}
+# Derived from the monthly customer numbers venn diagram produced by David Scully
+# Metric can currently be updated monthly
+total_ids <- 499381 # As of 01 August 2018 and refers to gas and(or) elec customers!
+valueBox(comma(total_ids), 
+         icon = "fa-user",
+         color = "#6CAEE0")
+```
+
+### Gas accounts (YTD)
+
+```{r}
+# Extracted from KPI_CN_RESULTS
+# Change in numbers is relative to the end of the previous year
+# Data are compared (performance) to the monthly cumulative net budget
+ytd_ref_gas <- gas_churn %>%
+  filter(Month == "Dec 2017" | row_number() == 1) %>%
+  arrange(desc(Month))
+
+gas_ytd <- pull(ytd_ref_gas[1, "Closing"] - ytd_ref_gas[2, "Closing"])
+gas_ytd_budget <- -7745 # Total cumulative net budget for month-end July
+gas_ytd_perf <- gas_ytd - gas_ytd_budget # Positive values are good (i.e. better than budget)!
+
+valueBox(comma(gas_ytd),
+         caption = "Gas (YTD)",
+         icon = if_else(gas_ytd < gas_ytd_budget, "fa-thumbs-down", "fa-thumbs-up"),  
+         color = if_else(gas_ytd < gas_ytd_budget, "#B70030", "#6EAA39"))
+```
+
+### Elec accounts (YTD)
+
+```{r}
+# Extracted from KPI_CN_RESULTS
+# Change in numbers is relative to the end of the previous year
+# Data are compared (var) to the monthly cumulative net budget
+ytd_ref_elec <- elec_churn %>%
+  filter(Month == "Dec 2017" | row_number() == 1) %>%
+  arrange(desc(Month))
+
+elec_ytd <- pull(ytd_ref_elec[1, "Closing"] - ytd_ref_elec[2, "Closing"])
+elec_ytd_budget <- 5035 # Total cumulative net budget for month-end July
+elec_ytd_perf <- elec_ytd - elec_ytd_budget # Positive values are good (i.e. better than budget)
+
+valueBox(comma(elec_ytd), 
+         caption = "Elec (YTD)",
+         icon = if_else(elec_ytd < elec_ytd_budget, "fa-thumbs-down", "fa-thumbs-up"),  
+         color = if_else(elec_ytd < elec_ytd_budget, "#B70030", "#6EAA39"))
+```
+
+### HomeCare visits
+
+```{r}
+# Derived from the monthly customer numbers venn diagram produced by David Scully
+# Can be updated monthly
+homecare <- comma(53658) # As of 01 August 2018
+valueBox(homecare,
+         icon = "fa-home",
+         color = "#6CAEE0")
+```
+
+### In Rewards Club 
+
+```{r}
+# Percentage of active customer base registered in the Rewards Club
+# Rewards Club count comes from the Rewards Excel report produced by David Scully
+# Data are currently updated monthly
+prop_rewards <- 279450 / total_ids # As of start of August 2018
+valueBox(percent(prop_rewards),
+         icon = "fa-gift",
+         color = "#6CAEE0")
+```
+
+Row
+--------------------------------------
+
+### **Monthly gas churn** 
+
+```{r}
+# All metrics derived from KPI_CN_RESULTS 
+# Versus represents absolute change from the previous year's annual mean
+# Annualised churn rates are updated monthly
+
+## IMPORTANT! SET ROW INDEX CORRECTLY WHEN OPERATIONAL AT MONTH END!
+mnthly_churn_gas <- round(gas_churn[1, "Churn"] %>% pull() * 100, 1)
+
+# Calculate previous year's actual annual churn rate
+gas_ref <- gas_churn %>%
+  filter(str_detect(Month, "2017")) %>%
+  summarise(AnnualChurn = sum(Losses) / ((tail(Opening, 1) + Closing[1]) / 2)) %>%
+  pull() %>%
+  round(3) * 100
+
+# Absolute percent change from the previous year's annual churn rate
+gas_change <- round((mnthly_churn_gas - gas_ref), 3)
+
+gauge(mnthly_churn_gas, 
+      min = 0, 
+      max = 100, 
+      symbol = "%", 
+      label = paste("vs. 2017:", gas_change, "%"),
+      gaugeSectors(success = c(0, 15.9), 
+                   warning = c(16, 24.9), 
+                   danger = c(25, 100),
+                   colors = c("#6EAA39", "#FFA500", "#B70030")))
+```
+
+### **Gas churn YTD**
+
+```{r}
+# YTD monthly gas churn
+# Compare to the previous year's actual annual churn rate
+gasYTD <- gas_churn %>%
+  filter(Month >= "Jan 2018" & Month < "Aug 2018") %>% 
+  summarise(Losses = sum(Losses),
+            Opening = tail(Opening, 1),
+            Closing = Closing[1],
+            MeanBase = (Opening + Closing) / 2,
+            ChurnYTD = Losses / MeanBase * 12 / n() * 100) %>% 
+  pull(ChurnYTD) %>% 
+  round(1)
+
+gauge(gasYTD, 
+      min = 0, 
+      max = 100, 
+      symbol = "%", 
+      label = paste("vs. 2017:", round(gasYTD - gas_ref, 1), "%"),
+      gaugeSectors(success = c(0, 15.9), 
+                   warning = c(16, 24.9), 
+                   danger = c(25, 100),
+                   colors = c("#6EAA39", "#FFA500", "#B70030")))
+```
+
+### **Monthly elec churn**
+
+```{r}
+# Calculated using the weekly customer numbers report
+# Versus represents absolute change from the previous year's mean
+# Annualised churn rates are updated monthly
+
+## IMPORTANT! SET ROW INDEX CORRECTLY WHEN OPERATIONAL AT MONTH END!
+mnthly_churn_elec <- round(elec_churn[1, "Churn"] %>% pull() * 100, 1)
+
+# Calculate previous year's annual churn rate
+elec_ref <- elec_churn %>%
+  filter(str_detect(Month, "2017")) %>%
+  summarise(AnnualChurn = sum(Losses) / mean(MeanBase)) %>%
+  pull() %>%
+  round(3) * 100
+
+# Absolute percent change from the previous year's annual churn rate
+elec_change <- round((mnthly_churn_elec - elec_ref), 3)
+
+gauge(mnthly_churn_elec, 
+      min = 0, 
+      max = 100, 
+      symbol = "%", 
+      label = paste("vs. 2017:", elec_change, "%"),
+      gaugeSectors(success = c(0, 15.9), 
+                   warning = c(16, 24.9), 
+                   danger = c(25, 100),
+                   colors = c("#6EAA39", "#FFA500", "#B70030")))
+```
+
+### **Elec churn YTD**
+
+```{r}
+# YTD monthly elec churn
+# Compare to the previous year's actual annual churn rate
+elecYTD <- elec_churn %>%
+  filter(Month >= "Jan 2018" & Month < "Aug 2018") %>% 
+  summarise(Losses = sum(Losses),
+            Opening = tail(Opening, 1),
+            Closing = Closing[1],
+            MeanBase = (Opening + Closing) / 2,
+            ChurnYTD = Losses / MeanBase * (12 / n()) * 100) %>% 
+  pull(ChurnYTD) %>% 
+  round(1)
+
+gauge(elecYTD, 
+      min = 0, 
+      max = 100, 
+      symbol = "%", 
+      label = paste("vs. 2017:", round(elecYTD - elec_ref, 1), "%"),
+      gaugeSectors(success = c(0, 15.9), 
+                   warning = c(16, 24.9), 
+                   danger = c(25, 100),
+                   colors = c("#6EAA39", "#FFA500", "#B70030")))
+```
+
+### **Total churn YTD**
+
+```{r}
+# Total gas and elec churn YTD
+totalYTD <- round((gasYTD + elecYTD) / 2, 1)
+
+# 2017 annual total churn rate
+total_churn2017 <- (gas_ref + elec_ref) / 2
+
+# Variance from previous year's annual total churn rate
+total_change <- round((totalYTD - total_churn2017), 1)
+ 
+gauge(totalYTD, 
+      min = 0, 
+      max = 100, 
+      symbol = "%", 
+      label = paste("vs. 2017:", total_change, "%"),
+      gaugeSectors(success = c(0, 15.9), 
+                   warning = c(16, 24.9), 
+                   danger = c(25, 100),
+                   colors = c("#6EAA39", "#FFA500", "#B70030")))
+```
+
+Row 
+--------------------------------------
+
+### **Customer numbers**
+
+```{r, echo = F}
+# Create time-series objects containing weekly residential customer numbers
+# Numbers correspond to gas and electricity accounts (SAs) not persons
+# Data are updated weekly but the trends should correspond to month-end in the dashboard
+gas.xts <- xts(gas_numbers$RES_GAS_SA, gas_numbers$WEEK_END) 
+elec.xts <- xts(elec_numbers$RES_ELEC_SA, elec_numbers$WEEK_END)
+
+# Cbind together for plotting
+all_active <- cbind(Gas = gas.xts, Elec = elec.xts)
+
+# Interactive customer numbers time-series dygraph 
+dygraph(all_active) %>%
+  dyLegend(show = "always",
+           labelsSeparateLines = F,
+           width = 400) %>%
+  dyOptions(drawGrid = T) %>%
+  dySeries("Gas", color = "#6CAEE0", strokeWidth = 3) %>%
+  dySeries("Elec", color = "#00306A", strokeWidth = 3) %>%
+  dyAxis("y", label = "Customer numbers",
+         valueFormatter = 'function(d){return d.toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",");}',
+         axisLabelFormatter = 'function(d){return d.toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",");}',
+         axisLabelWidth = 70)
+```   
+ 
+### **Monthly gains/losses performance**
+
+```{r}
+# This plot tracks gains and losses in relation to YTD net budget
+# The red line is the cumulative net gain/loss vs. the cumulative YTD net budget
+net_numbers_gas <- read_excel("budget_numbers_net.xlsx", 
+                              sheet = "Gas_budget", 
+                              col_names = T)
+
+net_numbers_gas <- net_numbers_gas %>%
+  mutate(Month = as.yearmon(Month))
+
+# Use only data relevant for 2018 trends
+# Filter correctly for month-end! 
+gas_test <- gas_churn %>%
+  filter(str_detect(gas_churn$Month, "2018") & Month < "Aug 2018") %>%
+  left_join(net_numbers_gas, by = "Month") %>%
+  mutate(NetActual = Closing - Opening,
+         NetDiff = NetActual - NetBudget,
+         NetYTD = rev(cumsum(rev(NetDiff))))
+
+# Plot
+p1 <- gas_test %>%
+  mutate(Month = as.POSIXct(Month, tz = "IST")) %>%
+  plot_ly(x = ~Month) %>%
+  add_bars(x = ~Month,
+           y = ~Gains,
+           name = "Gas gains",
+           hoverinfo = "y",
+           marker = list(color = "#6CAEE0")) %>%
+  add_bars(x = ~Month,
+           y = ~Losses,
+           name = "Gas losses",
+           hoverinfo = "y",
+           marker = list(color = "#6E6E69")) %>%
+  add_lines(x = ~Month,
+            y = ~NetYTD,
+            name = "YTD NetVar",
+            hoverinfo = "y",
+            line = list(color = "#B70030")) %>%
+  layout(xaxis = list(title = " "),
+         yaxis = list(title = " ",
+                      tickformat = ",d")) %>%
+  config(displayModeBar = F)
+
+# Join elec churn with budget elec
+net_numbers_elec <- read_excel("budget_numbers_net.xlsx", 
+                               sheet = "Elec_budget", 
+                               col_names = T)
+
+net_numbers_elec <- net_numbers_elec %>%
+  mutate(Month = as.yearmon(Month))
+
+# Use only data relevant for 2018 trends
+# Filter correctly for month-end! 
+elec_test <- elec_churn %>%
+  filter(str_detect(elec_churn$Month, "2018") & Month < "Aug 2018") %>%
+  left_join(net_numbers_elec, by = "Month") %>%
+  mutate(NetActual = Closing - Opening,
+         NetDiff = NetActual - NetBudget,
+         NetYTD = rev(cumsum(rev(NetDiff))))
+
+# Plot
+p2 <- elec_test %>%
+  mutate(Month = as.POSIXct(Month, tz = "IST")) %>%
+  plot_ly(x = ~Month) %>%
+  add_bars(x = ~Month,
+           y = ~Gains,
+           name = "Elec gains",
+           hoverinfo = "y",
+           marker = list(color = "#00306A")) %>%
+  add_bars(x = ~Month,
+           y = ~Losses,
+           name = "Elec losses",
+           hoverinfo = "y",
+           marker = list(color = "#6E6E69")) %>%
+  add_lines(x = ~Month,
+            y = ~NetYTD,
+            name = "YTD NetVar",
+            hoverinfo = "y",
+            line = list(color = "#B70030")) %>%
+  layout(xaxis = list(title = " ",
+                      ticks = "outside"),
+         yaxis = list(title = " ",
+                      tickformat = ",d")) %>%
+  config(displayModeBar = F)
+
+subplot(p1, p2, nrows = 2, shareX = T, shareY = T)
+```
+
+### **Monthly churn trends** 
+
+```{r}
+### Monthly churn trend data are derived from KPI_CN_RESULTS
+# The formula used is losses / mean monthly base 
+# Churn rates are updated monthly
+g_churn.xts <- xts(gas_churn$Churn, gas_churn$Month) 
+e_churn.xts <- xts(elec_churn$Churn, elec_churn$Month)
+churn_df <- cbind(Gas = g_churn.xts, Elec = e_churn.xts)
+#churn_df <- cbind(Gas = g_churn.xts[-length(g_churn.xts)], Elec = e_churn.xts[-length(e_churn.xts)]) # Adjusted for month-end!
+
+# Plot the churn time-series and show mean annual churn rates for the previous year
+dygraph(churn_df * 100) %>%
+  dyLegend(show = "always",
+           labelsSeparateLines = F,
+           width = 400) %>%
+  dyOptions(drawGrid = T) %>%
+  dySeries("Gas", color = "#6CAEE0", strokeWidth = 3) %>%
+  dySeries("Elec", color = "#00306A", strokeWidth = 3) %>%
+  dyAxis("y", label = "Monthly churn (%)")
+```
+
