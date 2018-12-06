@@ -1,10 +1,8 @@
 # Load packages required for the session
 library(dplyr)
 library(forcats)
-library(stringr)
 library(tidyr)
 library(ggplot2) 
-library(gridExtra)
 
 
 # Data wrangling, cleaning and preprocessing are synonymous terms for getting data ready for the extraction of insight
