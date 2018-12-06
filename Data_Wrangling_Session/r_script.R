@@ -289,8 +289,11 @@ food_tidy %>%
           subtitle = "Source: https://www.datacamp.com")
 
 # It is no surprise that sugary snacks are the food type most associated with ingredients from palm oil (think Nutella)
-# Many vegan foods contain palm oil so this is not a surprise either
+# Many plant-based foods contain palm oil so the presence of that category is not a surprise either
 # Breakfast cereals, desserts and sugary waffles make up the remaining top 5 food types associated with ingredients from palm oil
+       
+# For me, this database looks useful for checking whether a certain food product from a store contains ingredients that one wants to avoid.
+# I imagine this is why it was set up in the first place.
 
   
 
