@@ -220,7 +220,7 @@ A notable strength of the model is that it assumes no particular distribution fo
 A baseline hazard $h_0$ is specified and the model is defined as a linear combination of covariates. The effect of the covariates is to multiplicatively shift the baseline hazard and these shifts are constant over time under the proportional hazards assumption
 
 $$
-h(t_i)= h(_0)exp(\beta_1x_1 + ... + \beta_px_p)
+h(t_i)= h(t_{_0})exp(\beta_1x_1 + ... + \beta_px_p)
 $$
 
 The modelled hazard can be greater or less than the arbitrarily defined baseline. A hazard **> 1** means the hazard is greater than the baseline and the survival curve will run below the baseline curve. A hazard **< 1** means the hazard is less than the baseline and the survival curve will run above the baseline curve. A hazard of **0** means that the hazard is no different to the baseline hazard and the survival curve will run along the same path as the baseline curve. 
