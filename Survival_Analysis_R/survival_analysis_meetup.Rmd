@@ -1,0 +1,251 @@
+---
+title: "Survival Analysis using R"
+author: "Sean Walsh <sw23993@my.open.ac.uk>"
+date: "15 January 2019"
+output:
+  html_document:
+    fig_caption: yes
+    number_sections: yes
+    theme: lumen
+    toc: yes
+    toc_depth: 3
+    toc_float:
+      smooth_scroll: FALSE
+  pdf_document: default
+---
+
+```{r setup, include = F}
+# Set global options for code chunks and load required R packages and data
+library(dplyr)
+library(survival)
+library(muhaz)
+library(broom)
+library(ggplot2)
+data("lung") # Loads data but does not attach (I prefer not to attach in case variable names match across datasets)
+
+knitr::opts_chunk$set(echo = T, # Show code chunks in R Markdown document
+                      tidy  = F,
+                      cache = F,
+                      message = F,
+                      warning = F)
+
+# Rename levels in the status variable (necessary for functions used in this script)
+lung$status <- if_else(lung$status == 2, 1, 0)
+```
+
+
+# Introduction
+
+Survival analysis is a branch of statistics used for data analysis when the outcome of interest is time until an event occurs (i.e. **time-to-event data**). In bio-statistics, the event typically refers to death but it can be any outcome where the time until it occurs is of interest; it is the study of time between entry into observation and follow-up. 
+
+Two-dimensional data such as these provide more information than binary data alone. For example, imagine a study is conducted which examines component failure. Component A has a failure rate of 22% after three years while Component B has a failure rate of 17% after three years. If all A components failed within one year but B components failed at various points across the three year trial period, examining failure rate alone will not tell the full story. More insight is gained when including time until failure especially when dealing with treatment effects.
+
+Survival analysis is widely applicable and can be used, for example, to study life expectancy, time until equipment failure, time until an earthquake or other environmental event, time until athlete retirement or time until stock market crash. The historical origin of survival analysis is slightly ambiguous but it is thought to have first emerged centuries ago. It was only after World War II that survival analysis, stimulated by an interest in the reliability of military equipment, became more widespread. A good introduction can be found at <https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6110618/>.  
+
+
+# Example Data
+
+The clinical dataset used for this workshop is the **NCCTG Lung Cancer Data**. The dataset contains 228 observations and 10 variables. Documentation on the data set can be obtained with `?lung`. The longest observation period is 2.8 years.
+
+```{r lung data}
+# Inspect the dataset structure 
+str(lung)
+
+# Longest observation time (in years)
+max(lung$time) / 365
+```
+
+All ten variables are of numeric data type. We are interested in the time until death in the clinical population of advanced lung cancer patients so we can use this sample for statistical inference. The event (death) is represented by the `status` variable and the observed survival time by the `time` variable. For a description of the encoding used within variables, we can refer to the help documentation at any time.
+
+
+# The Survival Function
+
+In survival analysis, the objective is to understand and potentially model the underlying distribution of survival times (i.e. the time until the event occurs). Two common ways of describing this distribution are the **survival function**, $S(t)$ and the **hazard function**, $h(t)$. 
+The survival function gives the probability that a subject survives beyond some time or, in other words, the proportion of subjects who are event-free at some time. The survival function, $S(t)$, is a non-parametric estimator of survival at time $t$ and is defined as
+
+$$
+S(t_i) = S(t_{i-1})(1-\frac{n_i}{R_i})
+$$
+
+Note that $S(t_{0}) = 1$ always and survival probability decreases **monotonically** with time $t$. Therefore, it is a monotonic function given its entirely non-increasing nature.
+
+
+# The Hazard Function
+
+The hazard function $h(t)$ represents the instantaneous rate of failure at any time conditional on survival up until that time. It is also defined as the survival time density $f(t)$ at time $t$ over the survival probability at time $t$. 
+
+The hazard and survival functions provide alternative but equivalent descriptions of the distribution of survival times in a sample. If we obtain the survival function, we can simply differentiate to obtain the probability density function and then calculate the corresponding hazard function using the relationship described earlier.
+
+The **Kaplan-Meier** approach estimates the survival function using `survfit()` while `muhaz()` gives us smoothed estimates of the hazard function. The `pehaz()` functions can also be used which give histogram estimates of the hazards. The histograms use a piece wise 
+exponential hazard function which estimates the hazard in each bin as the number of events in that bin divided by the total follow-up time in that bin. 
+
+
+# Survival Time Distribution
+
+If any of you attended my data visualisation workshops, you will be familiar with some of the following code 
+and plot types. This first plot is a scatter plot of the number of events against follow-up time observed in the study. 
+
+```{r survival times}
+# Create a Kaplan-Meier fit on-the-fly and plot the survival time distribution
+survfit(Surv(time, status) ~ 1, 
+        data = lung) %>%
+  tidy() %>%
+  filter(n.event > 0) %>%
+  ggplot(aes(x = time,
+             y = n.event)) +
+  geom_jitter(alpha = 0.75,
+              colour = "red") +
+  ylab("Events") +
+  xlab("Time (days)") +
+  ggtitle("Distribution of survival times in the NCCTG data set",
+          subtitle = "Source: survival R package") +
+  theme(text = element_text(face = "bold",
+                            family = "AvantGarde"))
+```
+
+A histogram gives us a better view of the survival time distribution. Here is a base R histogram which shows that shorter survival times are more probable, particularly in the first 400 days.
+
+```{r hist}
+# Histogram of survival times
+lung %>%
+  filter(status == 1) %>% # Subset only subjects that experienced the event
+  pull(time) %>% # Pull the time variable as a vector
+  hist(main = "Survival times in NCCTG data",
+       xlab = "Time (days)")
+```
+
+Next, a probability density function (PDF) plot is created. We know that shorter survival times are more probable in this data set and this comes through in the plot of the PDF as well. We will obtain a median survival time in a later section to see how it relates to the histogram and probability density function.
+
+```{r pdf}
+# The probability density function
+lung %>%
+  filter(status == 1) %>% 
+  pull(time) %>%
+  density() %>%
+  plot(main = "PDF of survival times in NCCTG data",
+       xlab = "Time (days)")
+```
+
+The histogram estimate, using `pehaz()`, of the hazard function is shown below. 
+
+```{r hazard function}
+# The baseline hazard function estimate for gas-only
+plot(pehaz(lung$time,
+           lung$status,
+           max.time = max(lung$time)),
+     xlab = "Time (days)",
+     main = "Hazard function estimate based on NCCTG data")
+```
+
+
+# The Kaplan-Meier Estimator
+
+If we create a null Kaplan-Meier survival function for these data
+
+```{r Kaplan-Meier}
+# Create a Kaplan-Meier survival function fit
+km_fit <- survfit(Surv(time, status) ~ 1,
+                  data = lung)
+```
+
+and then plot the fit
+
+```{r Kaplan-Meier plot}
+# Plot the Kaplan-Meier estimator
+plot(km_fit,
+     xlab = "Time (days)",
+     ylab = "Survival probability",
+     main = "Kaplan-Meier estimator based on NCCTG data")
+```
+
+we see a **monotonic** function where survival probability is entirely non-increasing over time. The 95% confidence interval at each time point is demarcated by the dashed lines. The **median survival time**, which is the point by which 50% of subjects have experienced the event, can be obtained by simply calling the survival fit object. 
+
+The median survival time based on these data is 310 days. Using the 95% confidence interval, a reasonable estimate of survival time would be 285 to 363 days. 
+
+```{r median survival time}
+# Median survival time
+km_fit
+```
+
+
+# Survival Across Groups
+
+We plotted the null Kaplan-Meier fit earlier but what if we want to explore survival across groups? We can easily do this using the formula method. Let's compare survival across genders using the `sex` variable as a single covariate.
+
+```{r group comparison}
+# Kaplan-Meier survival estimators by gender
+km_fit_gender <- survfit(Surv(time, status) ~ sex,
+                         data = lung)
+
+# Plot the survival functions
+plot(km_fit_gender,
+     main = "Kaplan-Meier estimators by gender\n based on NCCTG data",
+     ylab = "Survival probability",
+     xlab = "Time (days)",
+     lty = c(1, 3),
+     col = c("orange", "blue"))
+
+# Add a legend
+legend(cex = .65,
+       legend = c("Male", "Female"),
+       lty = c(1,3),
+       col = c("orange", "blue"),
+       bty = "o",
+       x = 50,
+       y = 0.2)
+```
+
+The survival curves are different with females showing better survival over time in general. The median survival time is 270 days for males and 426 days for females.
+
+```{r group median survival times}
+# Summary of fit
+km_fit_gender
+```
+
+The log-rank test is the statistical test of choice when comparing survival across groups. The observed difference in survival across genders is statistically significant (*p* < 0.001).
+
+```{r log-rank test}
+# Perform the log-rank statistical test 
+survdiff(Surv(time, status) ~ sex,
+         data = lung)
+```
+
+
+# Cox Proportional Hazards Regression
+
+The Kaplan-Meier approach is excellent when comparing groups but if we want to include more variables then a regression strategy is required. The **Cox Proportional Hazards** regression model is a popular technique which allows the inclusion of continuous and categorical data as covariates. Its major assumption is proportional hazards and it models the hazard function discussed earlier. The survival function can then be constructed using the Cox Proportional Hazards model output. The proportional hazards assumption should be thoroughly checked using Kaplan-Meier estimators or the `cox.zph()` function. 
+
+A notable strength of the model is that it assumes no particular distribution for the underlying hazard. Accelerated Failure Time (AFT) models are another good approach when survival modelling but they require a parametric form for the underlying hazard function.
+
+A baseline hazard $h_0$ is specified and the model is defined as a linear combination of covariates. The effect of the covariates is to multiplicatively shift the baseline hazard and these shifts are constant over time under the proportional hazards assumption
+
+$$h(t_i)= h(_0)exp(\beta_1x_1 + ... + \beta_px_p)$$
+
+The modelled hazard can be greater or less than the arbitrarily defined baseline. A hazard **> 1** means the hazard is greater than the baseline and the survival curve will run below the baseline curve. A hazard **< 1** means the hazard is less than the baseline and the survival curve will run above the baseline curve. A hazard of **0** means that the hazard is no different to the baseline hazard and the survival curve will run along the same path as the baseline curve. 
+
+Some final points to note are that the Cox Proportional Hazards Regression model is a **relative** model and the **hazard ratios** are of utmost importance when interpreting the model output. Let's now build a Cox Proportional Hazards regression model using the `coxph()` function with `sex` and `age` as covariates.
+
+```{r cox ph regression}
+# Build a Cox PH regression model using sex and age as covariates
+cox_ph_mdl <- coxph(Surv(time, status) ~ sex + age, 
+                    data = lung) 
+
+# Retrieve the model output
+summary(cox_ph_mdl)
+```
+
+
+# Model Interpretation
+
+The Concordance index, or $c$-index, is the proportion of pairwise comparisons correctly identified by the model and can be used as a measure of model strength. The $c$-index is similar to the AUC model validation measure used in machine learning applications. Good Cox regression models will have a $c$-index between 0.6 and 0.7. The baseline model, i.e. the random guess model, is represented by a $c$-index of 0.5.
+
+The hazard ratio (exp(coef)) is the statistic of interest if its corresponding *p*-value is < 0.05. This statistic compares the hazards of treatment and reference groups to give a relative risk statistic. The three global significance tests are asymptotically similar but the likelihood ratio test result is typically favoured. 
+
+Finally, we can test the proportional hazards assumption using `cox.zph()`
+
+```{r ph test}
+# Test the proportional hazards assumption
+cox.zph(cox_ph_mdl)
+```
+
+
