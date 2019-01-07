@@ -38,15 +38,15 @@ Where $y$ is the *dependent* variable, $m$ is the *gradient* of the line, $x$ is
 The formula can also be written more formally as
 
 $$
-y_i = B_{0} + B_{1}x_{1} + e_i
+y_i = \beta_{0} + \beta_{1}x_{1} + e_i
 $$
 
-where $B_{0}$ is the intercept, $B_{1}$ is the slope of the line, or coefficient, and $e$ is the error associated with the estimate of $y$.
+where $\beta_{0}$ is the intercept, $\beta_{1}$ is the slope of the line, or coefficient, and $e$ is the error associated with the estimate of $y$.
 
 **Multiple linear regression** is an extension of simple linear regression where additional covariates are accommodated
 
 $$
-y = B_{0} + B_{1}x_{1} + B_{2}x_{2} + B_{3}x_{3} + ... + B_{p}x_{p} + e 
+y = \beta_{0} + \beta_{1}x_{1} + \beta_{2}x_{2} + \beta_{3}x_{3} + ... + \beta_{p}x_{p} + e 
 $$
 
 The line of best fit is calculated in R using the base `lm()` function which also outputs the slope and intercept coefficients. The slope and intercept of a simple linear regression can also be calculated from five summary statistics: the standard deviations `sd()` of x and y, the means `mean()` of x and y, and the **Pearson correlation coefficient** `cor()` of x and y.
