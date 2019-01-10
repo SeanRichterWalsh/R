@@ -225,9 +225,9 @@ $$
 h(t_i)= h(t_{_0})exp(\beta_1x_1 + ... + \beta_px_p)
 $$
 
-The modelled hazard can be greater or less than the arbitrarily defined baseline. A hazard **> 1** means the hazard is greater than the baseline and the survival curve will run below the baseline curve (i.e. worse survival). A hazard **< 1** means the hazard is less than the baseline and the survival curve will run above the baseline curve (i.e better survival). A hazard of **0** means that the hazard is no different to the baseline hazard and the survival curve will run along the same path as the baseline curve. 
+The modelled hazard can be greater or less than the arbitrarily defined baseline. A hazard **> 1** means the hazard is greater than the baseline and the survival curve will run below the baseline curve (i.e. worse survival). A hazard **< 1** means the hazard is less than the baseline and the survival curve will run above the baseline curve (i.e better survival). A hazard of **1** means that the hazard is no different to the baseline hazard and the survival curve will run along the same path as the baseline curve. 
 
-A few final points worth noting are that the Cox Proportional Hazards Regression model is a **relative** model and the **hazard ratios** are of utmost importance when interpreting the model output. Let's build a Cox Proportional Hazards regression model using the `coxph()` function with `sex` and `age` as covariates.
+A few final points worth noting are that the Cox Proportional Hazards Regression model is a **relative risk** model and the **hazard ratios** are of utmost importance when interpreting the model output. Let's build a Cox Proportional Hazards regression model using the `coxph()` function with `sex` and `age` as covariates.
 
 ```{r cox ph regression}
 # Make sex a factor (makes model interpretation easier)
