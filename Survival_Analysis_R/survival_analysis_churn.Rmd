@@ -1,0 +1,250 @@
+---
+title: "Survival Analysis with R"
+author: "Sean Walsh"
+date: "23 February 2019"
+output:
+  html_document:
+    fig_caption: yes
+    number_sections: yes
+    theme: lumen
+    toc: yes
+    toc_depth: 3
+    toc_float:
+      smooth_scroll: FALSE
+  pdf_document: default
+---
+
+```{r setup, include = F}
+# Set global options for code chunks and load required R packages and data
+library(dplyr)
+library(survival)
+library(broom)
+library(ggplot2)
+
+knitr::opts_chunk$set(echo = T, # Show code chunks in R Markdown document
+                      tidy  = F,
+                      cache = F,
+                      message = F,
+                      warning = F)
+
+# Read in churn data
+churn_df <- read.csv("~/SURVIVAL_ANALYSIS_MEETUPS/telco.csv")
+
+# Make the churned variable numeric and binary where 1 = churn and 0 = active 
+churn_df$churned <- if_else(churn_df$churned == TRUE, 1, 0)
+```
+
+
+# Introduction
+
+Survival analysis is a branch of statistics used for data analysis when the outcome of interest is time until an event occurs (i.e. **time-to-event data**). In bio-statistics, the event typically refers to death but it can be any outcome where the time until it occurs is of interest; it is the study of time between entry into observation and follow-up. 
+
+Two-dimensional data such as these provide far more information than binary data alone. For example, imagine a study was conducted which examined customer subscription churn across two product types. Product A had a loss rate of 67% after three years while Product B had a loss rate of 64% after three years. Based on this, we would logically conclude that both products have similar loss rates. 
+
+However, if the vast majority of Product A customers churned within one year of sign-up but Product B customers churned randomly at various points across the three-year period, examining loss rate alone does not tell the full story. Even though loss rates are similar after three years, Product B customers, on average, remained active for longer and therefore more revenue would have been generated from this cohort. More insight is gained when including time until the event and this is especially true when dealing with different cohorts or treatment effects.
+
+Survival analysis is widely applicable and can be used, for example, to study life expectancy, time until equipment failure, time until an earthquake or other environmental event, time until athlete retirement, time until customer churn or time until stock market crash. The historical origin of survival analysis is slightly ambiguous but it is thought to have first emerged centuries ago. It was only after World War II that survival analysis, stimulated by an interest in the reliability of military equipment, became more widespread. A good introduction can be found at <https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6110618/> and an excellent book on the subject is *Applied Survival Analysis using R* by Dirk Moore. 
+
+
+# Example Data
+
+The data set used for this presentation comes from Kaggle and is publicly available. It contains 5,000 telecommunications subscription records with 21 associated variables. The 21 variables are a mixture of continuous and categorical data types. The longest observed subscription period is 243 days.
+
+```{r churn data}
+# Inspect the dataset structure 
+str(churn_df)
+
+# Longest observation time
+max(churn_df$accountdur)
+```
+
+With survival analysis in mind, let's imagine that we are interested in the time until churn and we have this sample of 5,000 customers to work with. The sample could represent sign-ups from a particular year or month or customers in a treatment cohort. We want to find out how these customers were retained over time as well as what factors were important in determining survival time. The event (churn) is represented in the data set by the `churned` variable and the observed survival time by the `accountdur` variable. 
+
+
+# The Survival Function
+
+In survival analysis, the objective is to understand and potentially model the underlying distribution of survival times. Two common ways of describing this distribution are the **survival function**, $S(t)$ and the **hazard function**, $h(t)$. 
+The survival function gives the probability that a subject survives beyond some time or, in other words, the proportion of subjects who are event-free at some time. The survival function, $S(t)$, is a non-parametric estimator of survival at time $t$ and is defined as
+
+$$
+S(t_i) = S(t_{i-1})(1-\frac{n_i}{R_i})
+$$
+
+Note that $S(t_{0}) = 1$ always and survival probability decreases **monotonically** with time $t$. Given its entirely non-increasing nature, $S(t)$ is a monotonic function. The **Kaplan-Meier** approach we will use in this presentation estimates the survival function using `survfit()`.
+
+
+# The Hazard Function
+
+The hazard function $h(t)$ represents the instantaneous rate of failure at any time conditional on survival up until that time. It can be defined as the survival time density $f(t)$ at time $t$ over the survival probability at time $t$. 
+
+The hazard and survival functions provide alternative but equivalent descriptions of the distribution of survival times in a sample. If we obtain the survival function, we can simply differentiate to obtain the probability density function and then calculate the corresponding hazard function using the relationship described in the last paragraph.
+
+
+# Event Time Distribution
+
+The code below produces a scatter plot of the number of events (churns) against account duration observed in the study sample. Note that we are only plotting known event times here and are ignoring account duration associated with active customers. **This is an important point to remember**.
+
+```{r survival times}
+# Create a Kaplan-Meier fit on-the-fly and plot the event time distribution
+survfit(Surv(accountdur, churned) ~ 1, 
+        data = churn_df) %>%
+  tidy() %>%
+  filter(n.event > 0) %>%
+  ggplot(aes(x = time,
+             y = n.event)) +
+  geom_point(alpha = 0.75,
+              colour = "red") +
+  ylab("Churns") +
+  xlab("Account duration (days)") +
+  scale_y_continuous(breaks = seq(0, 20, 1)) +
+  ggtitle("Distribution of churned account duration") +
+  theme(text = element_text(face = "bold",
+                            family = "AvantGarde"))
+```
+
+A histogram provides a much better view of the event time distribution. The following plot is a base R histogram which shows that the distribution of observed churn event times is approximately normal with a mean account duration of about 100 days.
+
+```{r hist}
+# Histogram of survival times
+churn_df %>%
+  filter(churned == 1) %>% # Subset only customers that churned
+  pull(accountdur) %>% # Pull the account duration time variable as a vector
+  hist(main = "Distribution of churned account duration",
+       xlab = "Account duration (days)",
+       col = "red")
+```
+
+Finally, a probability density function (PDF) plot is created. The shape of the function matches what we see in the histogram above and it confirms, from this sample at least, that churn is more probable between about 75 and 125 days. 
+
+```{r pdf}
+# The probability density function
+churn_df %>%
+  filter(churned == 1) %>% 
+  pull(accountdur) %>%
+  density() %>%
+  plot(main = "Proability density function of churned account duration",
+       xlab = "Account duration (days)")
+```
+
+
+# The Kaplan-Meier Estimator
+
+If we create a null (and by null I mean with no groups) Kaplan-Meier survival function for the sample data, we can inspect a general median survival time and survival curve. Let us now estimate the survival function
+
+```{r Kaplan-Meier}
+# Create a Kaplan-Meier survival function fit
+km_fit <- survfit(Surv(accountdur, churned) ~ 1,
+                  data = churn_df)
+```
+
+and then plot the resulting object
+
+```{r Kaplan-Meier plot}
+# Plot the Kaplan-Meier estimator
+plot(km_fit,
+     xlab = "Account duration (days)",
+     ylab = "Survival probability",
+     main = "Kaplan-Meier survival estimator")
+```
+
+The result is a **monotonic** function where survival probability is entirely non-increasing over time. Note the presence of a 95% confidence interval at each time point which is demarcated by the laterally positioned dashed lines. The **median survival time**, which is the point by which 50% of customers in the sample have churned, can be obtained by simply calling the survival fit object. 
+
+```{r median survival time}
+# Median survival time
+km_fit
+```
+
+The median survival time estimated from these data is 200 days. Using the 95% confidence interval, a reasonable estimate of survival time would be 188 to 224 days. Note that this is an estimate based on the null Kaplan-Meier fit (i.e. no covariates) **and now includes the information provided by customers who did not churn**. 
+
+If we go back to the distribution of known churn event account duration, the major "leak" appears to be between around 75 and 125 days. However, using all available information on account duration (both churned and active) gives us a median survival time of 200 days. This is the strength of analysing time-to-event data; even though we know a lot of churn occurs between 75 and 125 days, an average customer can be expected to have a subscription length of 200 days. 
+
+
+# Survival Across Groups
+
+We plotted the null Kaplan-Meier fit earlier but what if we want to explore customer retention across different groups? We can easily do this using the formula method in R. Let's compare retention in customers that were on an international plan and those who were not by introducing the `intlplan` variable as a single covariate.
+
+```{r group comparison}
+# Kaplan-Meier survival estimators by international plan group
+km_fit_intlplan <- survfit(Surv(accountdur, churned) ~ intlplan,
+                         data = churn_df)
+
+# Plot the survival functions
+plot(km_fit_intlplan,
+     main = "Kaplan-Meier estimators by international plan",
+     ylab = "Survival probability",
+     xlab = "Account duration (days)",
+     lty = c(1, 3),
+     col = c("orange", "blue"),
+     conf.int = T) # Turn on 95% CI
+
+# Add a legend
+legend(cex = .65,
+       legend = c("intlplan = No", "intlplan = Yes"),
+       lty = c(1,3),
+       col = c("orange", "blue"),
+       bty = "o",
+       x = 25,
+       y = 0.2)
+```
+
+The survival curves are clearly different with customers not on an international plan exhibiting better retention over time. After the first month or so, the survival curve for those not on an international plan consistently runs above that for those on an international plan. The median survival time is 212 days for those not on an international plan and 136 days for those on an international plan. 
+
+```{r group median survival times}
+# Summary of fit
+km_fit_intlplan
+```
+
+The two survival curves are clearly different and the confidence intervals do not overlap beyond the first month or so. However, we should perform a formal test to confirm that the difference between survival curves is statistically significant. The **log-rank** test is the statistical test of choice when comparing survival across groups and performing it shows us that the observed difference is statistically significant (*p* < 0.001).
+
+```{r log-rank test}
+# Perform the log-rank statistical test 
+survdiff(Surv(accountdur, churned) ~ intlplan,
+         data = churn_df)
+```
+
+
+# Cox Proportional Hazards Regression
+
+The Kaplan-Meier approach is excellent when comparing survival across two or more groups. However, if we want to investigate the effect of multiple covariates simultaneously then a regression strategy is required. The **Cox Proportional Hazards** regression model is a popular technique which allows the inclusion of both continuous and categorical data as covariates. Its major assumption is proportional hazards and it models the hazard function discussed earlier. The proportional hazards assumption should be thoroughly checked using Kaplan-Meier estimators or the `cox.zph()` function. 
+
+A notable strength of the model is that it assumes no particular distribution for the baseline hazard. It can also produce the survival function for any customer or group which can then be used for predictive modelling. The use of **Accelerated Failure Time (AFT)** models is another good approach when survival modelling but they require a parametric form specified for the baseline hazard function (which can often be unknown or unstable).
+
+In the Cox model, a baseline hazard $h_0$ is specified (as 1) and the model is a linear combination of covariates. The effect of the covariates is to multiplicatively shift the baseline hazard and these shifts are constant over time under the proportional hazards assumption
+
+$$
+h(t_i)= h(t_{_0})exp(\beta_1x_1 + ... + \beta_px_p)
+$$
+
+The modelled hazard can be greater or less than the arbitrarily defined baseline. A hazard **> 1** means the hazard is greater than the baseline and the survival curve will run below the baseline curve (i.e. worse survival). A hazard **< 1** means the hazard is less than the baseline and the survival curve will run above the baseline curve (i.e better survival). A hazard of **1** means that the hazard is no different to the baseline hazard and the survival curve will run along the same path as the baseline curve. 
+
+A few final points worth noting are that the Cox Proportional Hazards Regression model is a **relative risk** model (see `?predict.coxph`) and that the **hazard ratios** are of utmost importance when interpreting the model output. Let's now build a Cox Proportional Hazards regression model using the `coxph()` function and add some more covariates.
+
+```{r cox ph regression}
+# Cox PH model using intlplan, vmailplan, custservicecalls, daymins and evemins as covariates
+# Additional covariates can be added as necessary
+cox_ph_mdl <- coxph(Surv(accountdur, churned) ~ intlplan + 
+                      vmailplan + 
+                      custservicecalls +
+                      daymins +
+                      evemins, 
+                    data = churn_df) 
+
+# Retrieve the model output
+summary(cox_ph_mdl)
+```
+
+
+# Model Interpretation
+
+The Concordance, or $c$-index, is the proportion of pairwise comparisons correctly identified by the model and can be used as a measure of model strength. The $c$-index is similar to the AUC model validation measure used in some machine learning applications. Optimal Cox Proportional Hazards regression models generally have a $c$-index between 0.6 and 0.8 so our model is good. The baseline model, i.e. the random guess model, is represented by a $c$-index of 0.5.
+
+The **hazard ratio** (exp(coef)) is the statistic of interest if its corresponding *p*-value is < 0.05. This important statistic compares the hazards of treatment and reference groups to quantify **relative risk**. The z-statistic also provides useful information to the modeller and can be used to assess the strength of a signal. The three global significance tests are asymptotically similar but the likelihood ratio test result is typically favoured. Here, all three confirm that the overall model is statistically significant (*p* < 0.001).
+
+Finally, we can formally test the proportional hazards assumption using `cox.zph()`. If the global *p*-value is > 0.05, then the proportional hazards assumption holds true. If the proportional hazards assumption is violated, then **stratifying** on the culprit covariate may provide a solution.
+
+```{r ph test}
+# Test the proportional hazards assumption
+cox.zph(cox_ph_mdl)
+```
+
+
