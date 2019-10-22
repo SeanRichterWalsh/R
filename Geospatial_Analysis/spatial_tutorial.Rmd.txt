@@ -1,0 +1,262 @@
+---
+title: "Meetup Spatial Analysis"
+output:
+  html_document:
+    df_print: paged
+editor_options:
+  chunk_output_type: console
+---
+
+# Spatial Analysis With R
+
+## Introduction
+
+Spatial Analysis typically refers to analysis of the relationships between objects, their locations and their attributes. This has generally been at the human scale, so looking at the positions of objects on the surface of the earth. It has parrallels with the analysis of point patterns, which has applications at the microscopic and astronomic scale.
+
+Geographic Information Science is a field of its own, and several desktop applications exist for its practise. ArcGIS from ESRI is akin to Microsoft's Windows in its dominance and ubiquity in entreprises, and similarly its pricing model, whereas the equally (if not more) capable QGIS is an open source tool. These are more of a graphical tool for geospatial analysis.
+
+R has some very powerful tools for spatial analysis, which have recently been added to by the "sf" package. This brings the intuitiveness of the tidyverse into the spatial analysis realm.
+
+## Some background..
+
+There are several things to bear in mind when working with spatial data.
+
+ * spatial data will typically consist of "features", which are accompanied by a table of data. Depending on the package being used, the features can be a seperate entity (in a S4 class based system like _sp_) or exist in the table itself. _sf_ has the advantage that the features are in the dataframe with the data, in a column typically named __geom__ or __geometry__.
+ 
+ * these features can be of several types, generally either extensions of point, line or polygon. So a shop location would be a single _point_, whereby a group of shops may be a _multi-point_.
+ 
+ * the features are numerical representations of a place on the earth. This numerical representation system can be a geographic co-ordinate system, referring to the sphere (ie -6.283, 53.564) or can be a projected co-ordinate system, which means it refers to a local gridded coordinate system. For the Irish context, the following will be encountered:
+  1. WGS84 - World Geodesic System 84 - spherical coordinates - EPSG Code 4326
+  2. IG - Irish Grid - a legacy coordinate system - EPSG Code 29902
+  3. ITM95 - Irish Transverse MErcator - EPSG 2157
+  
+## Task
+
+In this tutorial, two spatial datasets will be downloaded, processed and analysed. The dataset chosen is the Irish Primary Schools dataset [link](https://data.gov.ie/dataset/primary-schools), which gives the location and details of all the schools in Ireland. The Census Data from 2016 will also be downloaded, along with the county boundaries for Ireland. [link](https://www.cso.ie/en/census/census2016reports/census2016smallareapopulationstatistics/)
+
+We will use the *settlement* boundary as the geographical area to examine our data under. We need to do this in order to have a sensible block to aggregate our data by - this means that we will be ignoring rural areas to a large extent. It will also mean aggregating Dublin into a large block, meaning we won't get a very nuanced view of the local supply/demand situation. 
+
+We will try to ascertain areas in a particular county are underserved by schools, and are in need of additional resources.
+
+Along the way, we will look at different methods of exploring the data, with a view to improving our understanding of the data. We will need to do some spatial joins in order to compare datasets from different areas.
+
+```{r setup, error = FALSE, message = FALSE, warning = FALSE}
+library(knitr)
+
+library(tidyverse)
+library(sf)
+library(lwgeom)
+library(magrittr)
+library(leaflet)
+library(scales)
+
+
+
+# import data
+schools <- read_csv("http://airo.maynoothuniversity.ie/files/dDATASTORE/education/csv/primary_schools_2013_2014.csv")
+
+settlement_variables <- read_csv("https://www.cso.ie/en/media/csoie/census/census2016/census2016boundaryfiles/SAPS2016_ST2016.csv")
+
+settlements <- st_read("http://data-osi.opendata.arcgis.com/datasets/e931911e755a40a1a69724105fc76688_0.geojson")
+
+county_bdrys <- st_read("http://data-osi.opendata.arcgis.com/datasets/8d72c217f46f4decaedf4fc66d633e57_0.geojson", stringsAsFactors = FALSE)
+```
+
+We now have our data downloaded. Like *read_csv* for comma-seperated variable tables, *st_read* allows the ingest of spatial data formats. Like all data types, there are various formats for spatial data - the _geojson_ format used above is a web-native format and is literally a text file with a nested list structure, like _json_ which I guess it's derived from. _geojson_ is typically in WGS84 projection - it is always necessary when performing spatial analysis to ensure that all data is in the same projection - it's like comparing Celsius and Fahrenheit temperatures... Fortunately, __sf__ will typically give a warning if we make this error.
+
+One thing to watch out for with *st_read* is that, unlike *read_csv*, it will coerce character variables to factors by default - use `stringsAsFactors = FALSE` to avoid this.
+
+```{r examine-data}
+str(county_bdrys)
+
+st_crs(county_bdrys)
+
+county_bdrys %>% 
+  st_area(geometry) %>% 
+  mean()
+# 2602935086 [m^2]
+
+
+# Project both geometries to a planar projection ITM95
+county_bdrys %<>% st_transform(2157)
+settlements %<>% st_transform(2157)
+
+county_bdrys %>% 
+  st_area(geometry) %>% 
+  mean()
+
+settlements %>% 
+  st_area(geometry) %>% 
+  mean()
+```
+
+So we have imported two spatial files. In order to do some analysis, how do we convert our schools and census dataframes to spatial objects?
+
+For the schools data, we will use the co-ordinate data as the input to create a point geometry for each record.
+
+
+
+```{r joining-and-creating-spatial-data}
+
+# create a sf object from the schools data
+school_pts <- schools %>% 
+  st_as_sf(coords = c("xcoord", "ycoord"), crs = 29902) %>% 
+  st_transform(2157)
+
+plot(school_pts$geometry, pch = ".")
+
+plot(settlements$geometry)
+
+census_age_variables <- settlement_variables %>% 
+  select(1, starts_with("T1_1")) %>% # select all the columns related to age demography
+  select(1, ends_with("T")) %>% # select totals, rather then male and female only
+  select(c(1:14)) # select the guid and ages up to 12 yoa
+
+# join these to the polygons
+settlement_age_lte_12 <- settlements %>% 
+  inner_join(census_age_variables) # innerjoin avoids na values
+
+# lets do a fancier plot with county boundaries and schools
+ggplot(county_bdrys) +
+  geom_sf() +
+  geom_sf(data = school_pts, aes(color = Ethos), size = 1)
+
+
+# interactive map?
+library(mapview) # https://r-spatial.github.io/mapview/index.html
+
+# running into a UTF-8 error with schools dataframe - subsetting for just the columns needed might avoid this
+school_pts %<>% select(Ethos, c(10:15))
+mapview(school_pts, 
+        zcol = "Ethos", 
+        legend = TRUE, 
+        cex = "T_13_14", 
+        popup = popupTable(school_pts,
+                   zcol = c("Ethos", "T_13_14")))
+```
+
+So, we've been able to nicely visualise the data. Let's now try to answer some questions about the match between supply and demand for education. Essentially, let's try to identify areas where there is a distinct shortage of school places.
+
+We have to make some assumptions here to simplify our task:
+
+ * we will assume the school places and population are genderless - that is we will only consider the total number of school places and the total number of children.
+ * we will assume that the schools within a settlement serve the children within that settlement. This will to a certain extent disregard rural dwellers, but it may be possible that we can look at the ratio of places to demand and use that as an indicator.
+ * we will assume that the school places and the number of children between age 5 and age 12 are current - ie that there is no temporal difference in this data.
+ * we will disregard the ethos of a school
+ 
+This is the process we will carry out to calculate demand:
+ 
+ * we will calculate the total number of children for each Settlement from age 5 to age 12
+ * we will determine the total number of school places available within a Settlement
+ * we will look at the distribution of the ratio between the available school places and the demand for school places and identify outlier areas.
+ 
+```{r calculate-children-count}
+settlement_age_lte_12 %<>%
+  mutate(total_schoolchildren = (T1_1AGE5T +
+                                 T1_1AGE6T +
+                                 T1_1AGE7T +
+                                 T1_1AGE8T +
+                                 T1_1AGE9T +
+                                 T1_1AGE10T +
+                                 T1_1AGE11T +
+                                 T1_1AGE12T))
+  
+
+settlement_age_lte_12 %>%
+  st_set_geometry(NULL) %>% 
+  ggplot() +
+  geom_histogram(aes(total_schoolchildren)) +
+  scale_x_log10(breaks = trans_breaks("log10", function(x) 10^x),
+                     labels = trans_format("log10", math_format(10^.x)))
+```
+
+Looking at the distribution of the number of schoolchildren, the mode seems to exist at about the 800 to 100 mark, with a long tail and a right-skewed distribution.
+
+Now, we will match the schools to their respective Settlements using a spatial join. Spatial joins are analogous to database joins, but join on a geometric predicate like "within", "contains", "intersects", "touches" etc.
+
+```{r spatial-join-school-to-settlement}
+# remove all data not needed in settlement sf object
+
+settlement_age_lte_12 %>% 
+  select(SETTL_NAME, total_schoolchildren, GUID) -> settlement_schoolgoing_total
+
+schools_in_settlements <- school_pts %>%
+  st_join(settlement_schoolgoing_total, join = st_within, left = FALSE)
+# note we set geometry as null because I want to do some aggregation on the data - we will join back to data after
+```
+
+Note that the spatial join is not a left join - this means that it will only keep rows on the LHS that have a match on the RHS - the *rural* schools, or schools that are not located within the boundaries of settlements will not be selected.
+
+The next step is to sum the total number of places grouping on the settlement.
+
+```{r sum-on-grouped-settlement}
+schools_in_settlements %>% 
+  st_set_geometry(NULL) %>% 
+  group_by(GUID) %>% 
+  summarise(total_school_places = sum(T_13_14)) %>% 
+  left_join(settlement_age_lte_12) %>% 
+  select(GUID, Name = SETTL_NAME, total_schoolchildren, total_school_places) %>% 
+  mutate(prop_demand_to_supply = total_schoolchildren / total_school_places) -> settlement_ratio
+
+settlement_ratio %>%
+  ggplot() +
+  geom_boxplot(aes(y = prop_demand_to_supply)) +
+  labs(y = "Ratio of Demand to Supply")
+
+# Outliers look to be above 1.6...
+settlement_ratio %<>% 
+  mutate(outlier = ifelse(prop_demand_to_supply > 1.6, "TRUE", "FALSE"))
+
+
+settlements %>% 
+  select(GUID) %>% 
+  inner_join(settlement_ratio) -> settlement_school_ratio
+
+settlement_school_ratio %>% 
+  st_set_geometry(NULL) %>% 
+  count(outlier)
+
+settlement_school_ratio %>% 
+  st_set_geometry(NULL) %>% 
+  filter(outlier == "TRUE") %>% 
+  select(Name)
+```
+
+Ratio <= 1.6  :   704
+Ratio  > 1.6  :   11
+
+The settlements that are outliers in terms of their ratio of schoolchildren to schoolplaces are:
+
+Ballina
+Cootehill
+Youghal
+Laytown-Bettystown-Mornington-Donacarney
+Caherconlish
+Lanesborough-Ballyleague
+Whitegate
+Lusk
+Lifford
+
+Now let's map these areas and see whether there are any schools near the periphery which might alleviate this problem.
+
+```{r map_school-shortage}
+settlement_school_ratio %>% 
+  filter(outlier == "TRUE") -> high_demand_areas
+
+mapview(list(high_demand_areas, school_pts),
+        layer.name = c("High Demand/Supply Ratio Areas", "School Locations"),
+        zcol = list("Name", NULL),
+        legend = list(FALSE, FALSE),
+        popup = list(popupTable(high_demand_areas,
+                                zcol = c("total_schoolchildren", "total_school_places")), 
+                     popupTable(school_pts,
+                                zcol = c("T_13_14")
+                                )
+                     )
+)
+```
+
+
+As can be seen from browsing through the map, the analysis is not very rigorous. A lot of the settlements have schools just outside which could take up the slack with respect to the uncatered for children.
+
+I hope you enjoyed this toy analysis - it was a good way to demonstrate the geospatial analysis and visualisation abilities of R!
