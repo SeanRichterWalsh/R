@@ -14,12 +14,12 @@ output:
   pdf_document: default
 ---
 
-```{r setup, include=F}
+```{r setup, include = FALSE}
 # Set global options for code chunks and load required R packages and data
 library(dplyr)
 library(ggplot2)
 library(caret)
-knitr::opts_chunk$set(echo = T)
+knitr::opts_chunk$set(echo = TRUE)
 data("mtcars")
 ```
 
@@ -51,7 +51,7 @@ $$
 
 The line of best fit is calculated in R using the base `lm()` function which also outputs the slope and intercept coefficients. The slope and intercept of a simple linear regression can also be calculated from five summary statistics: the standard deviations `sd()` of x and y, the means `mean()` of x and y, and the **Pearson correlation coefficient** `cor()` of x and y.
 
-```{r slope and intercept, eval=F}
+```{r slope and intercept, eval = FALSE}
 # How to calculate the slope in linear regression
 slope <- cor(x, y) * (sd(y) / sd(x))
 
