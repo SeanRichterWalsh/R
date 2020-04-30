@@ -54,7 +54,7 @@ timeseries <- read_excel("test_dfXL.xlsx",
 # Basic histogram
 ggplot(data = diamonds, 
        aes(x = price)) +
-  geom_histogram()
+  geom_histogram(bins = 200) # n bins 100 or 200 based on F.Harrell's Rconf 2020 talk
 
 # Base R version
 hist(diamonds$price)
@@ -62,12 +62,12 @@ hist(diamonds$price)
 # Log transform the x-axis variable
 ggplot(data = diamonds, 
        aes(x = log(price))) +
-  geom_histogram()
+  geom_histogram(bins = 200)
 
 # Arithmetic operations can be performed when assigning aesthetic mappings 
 ggplot(data = diamonds, 
        aes(x = price / carat)) +
-  geom_histogram()
+  geom_histogram(bins = 200)
 
 # Basic density plot
 ggplot(data = diamonds, 
