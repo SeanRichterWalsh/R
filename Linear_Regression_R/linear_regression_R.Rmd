@@ -527,7 +527,7 @@ rm(climate_data,
    SST)
 ```
 
-## Example 3: Predicting average reading test scores of males from the PISA data set
+## Example 3: Predicting average reading test scores from the PISA data set
 
 ```{r Ex3.mean reading scores}
 # Mean reading test score for males (use the mean for this example)
