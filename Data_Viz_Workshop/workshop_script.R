@@ -106,6 +106,13 @@ ggplot(data = diamonds,
            y = price)) +
   geom_point(alpha = 0.2)
 
+# And we can enhance this data visualisation using geom_rug()
+ggplot(data = diamonds, 
+       aes(x = carat,
+           y = price)) +
+  geom_point(alpha = 0.2) +
+  geom_rug()
+
 # Boxplots to compare different samples
 ggplot(data = diamonds, 
        aes(x = cut, # Categorical data on x-axis
