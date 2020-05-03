@@ -1,7 +1,7 @@
 ---
-title: "Linear regression using R"
+title: "Regression Modelling with R"
 author: "Sean Walsh <sdwalsh335@gmail.com>"
-date: "01 May 2020"
+date: "03 May 2020"
 output:
   html_document:
     number_sections: yes
@@ -123,7 +123,7 @@ Note that *correlation does not imply causation*; it just allows one to quantify
 
 Another measure of correlation is **Spearman's Rank correlation coefficient**. This is the *non-parametric* version of Pearson's which is *parametric*. Spearman's is less restrictive but both are associated with assumptions that are important to check. For Pearson's, both variables must be continuous, normally distributed and part of a random sample. For Spearman's, one or both variables can be continuous or ordinal, the relationship must be *monotonic*, and the variables must be part of a random sample. Thus, Spearman's rank quantifies the strength of the monotonic association between two variables while Pearson's quantifies the strength of a straight line association.
 
-If the relationship is non-linear, and linear regression is still desired, a common approach is to transform the response variable in order to coerce the relationship to one that approaches linearity. **It is also good practice to transform a skewed dependent variable to a more normal one as this reduces the impact of any outliers on the residuals**. Common transformations include natural log, base ten log, square root, cube root and inverse. The `mpg` and `disp` relationship is already approximately linear but it can be strengthened using a natural log transformation of the dependent variable `mpg`
+If the relationship is non-linear, and linear regression is still desired, a common approach is to transform the response variable in order to coerce the relationship to one that approaches linearity. **It is also good practice to transform a skewed dependent variable to a more normal one as this reduces the impact of any outliers on the residuals**. Note that $$y_i = \beta_{0} + \beta_{1}x_{1} + e_i$$ is not the only two-parameter model for describing the relationship between a dependent variable and a single continuous explanatory variable. Model choice is vital and alternative options include transformations such as natural log, base ten log, exponential, square root, power law, cube root and inverse. The `mpg` and `disp` relationship is already approximately linear but it can be strengthened using a natural log transformation of the dependent variable `mpg`
 
 ```{r Ex1.log(mpg) vs disp}
 # Scatterplot of log(mpg) vs. disp
@@ -253,6 +253,8 @@ intercept <- mean(log(mtcars$mpg)) - (slope * mean(mtcars$disp))
 slope; intercept
 ```
 
+Recall that standard errors are unreliability measures. Increasing the spread of the $x$ values reduces unreliability of the estimated slope. For the intercept, uncertainty declines with increasing sample size and confidence in predictions made with linear regression declines with the square of the distance between the mean value of $x$ and the value of $x$ where the prediction is to be made. Thus, when the origin of the graph is far from the mean value of $x$, the standard error of the intercept will be large, and vice versa.
+
 ### Model interpretation
 
 Using the first simple model, the $p$-value for engine displacement is highly significant and $r^2$, a measure of variance explained, is strong at 0.78. The take home message from the output is that for every unit increase in engine displacement there is, on average, a -0.002115 decrease in fuel efficiency (via the log of mpg). Therefore, we infer from the model that fuel efficiency decreases with increasing engine displacement.
@@ -279,6 +281,7 @@ model_2 <- lm(log(mpg) ~ disp + wt + factor(cyl) + gear,
 
 # Model summary
 summary(model_2)
+influence.measures(model_2)
 ```
 
 Engine displacement becomes insignificant when vehicle weight, number of cylinders and gears are included as covariates. Multicollinearity is at play here as some of these covariates are strongly correlated
