@@ -1,0 +1,94 @@
+library(tidyverse)
+
+set.seed(77)
+
+# Dummy data
+df <- tibble(
+  x = sample(10, 100, rep = TRUE),
+  y = sample(10, 100, rep = TRUE)
+)
+
+nrow(df) # Total rows in starting data
+nrow(distinct(df)) # Total distinct rows using all variables
+nrow(distinct(df, x, y)) # Same result as above given there is only x and y variables
+distinct(df, x) # Returns the vector of distinct x values only
+distinct(df, y) # Returns the vector of distinct y values only
+
+# We can choose to keep all other variables as well
+distinct(df, x, .keep_all = TRUE)
+distinct(df, y, .keep_all = TRUE)
+
+# But which row is kept? The first observation is retained
+# If we want to arrange based on a priority variable, e.g. y = 6 is important if present, if not take the first row.
+# Then we must use arrange(); y = 6 is prioritised if present
+df %>%
+  arrange(x, desc(y == 6)) %>%
+  distinct(x, .keep_all = TRUE) # This keeps the value of x that is associated with y = 6 where present
+
+# Or keep the row with the highest value of y
+df %>%
+  arrange(x, desc(y)) %>%
+  distinct(x, .keep_all = TRUE)
+
+# Or if de-duplicating on GPRN and SA status ID is important
+df %>%
+  arrange(GPRN, desc(SA_STATUS_ID == 20)) %>%
+  distinct(GPRN, .keep_all = TRUE)
+
+# Or if observations are completely duplicated across variables, then it doesn't matter;
+# we just pass the data frame to distinct()
+
+# ------ WORKFLOW ------
+#0) update GPRN lists in SQL scripts if necessary
+#1) connect to DWH and send SQL queries (from Python)
+#2) de-duplicate returned data frames on GPRN and SA_STATUS_ID == 20 (if multiple meet condition take any of them)
+#3) use xlsx or openxlsx (write.xlsx()) package to write results to individual sheets in workbooks (use sysdate in filename)
+#4) email workbooks to Damien Crilly and David Hargadon
+
+
+# I do not mind on the duplicate GPRNs – whichever is the active SA status 20 against the GPRN is 
+# the one that I will take – if they are multiple active SA IDs then just reduce it down to which one 
+# and once the GPRN only appears once against whichever chosen SA then that will be fine.
+
+# File name can be changed to be more convenient in a loop or whatever too.
+
+
+
+
+
+
+# Make three identical POSIXct objects with UTC timezone
+dttm_raw <- dttm_attr <- dttm_force <- as.POSIXct("2015-05-05 12:00:02", tz = "UTC")
+
+## SCENARIO 1: IMPORTED DATES ARE ACTUALLY FROM OBSERVATIONS MADE IN A UTC TIMEZONE
+# readxl brings all dates in as being UTC as Excel has no notion of timezone
+# If the observations were made in a UTC timezone then all is good; we can convert as necessary if needed
+
+# Observation made in UTC timezone (readxl will read in date as being UTC so it will be correct)
+dttm_attr
+
+# If we want to know what time it was in EDT when the observation was made then we get the UTC conversion (UTC - 4 hours)
+attr(dttm_attr, "tzone") <- "US/Eastern"
+dttm_attr
+
+# If we want to know what time it was in Ireland when the observation was made then we get the UTC conversion (UTC + 1 hour)
+# Do the UTC conversion to get IST (UTC + 1 hour)
+attr(dttm_attr, "tzone") <- "Europe/Dublin"
+dttm_attr
+
+## SCENARIO 2: IMPORTED DATE COME IN AS BEING UTC BUT THEY WERE ACTUALLY MADE IN A DIFFERENT TIMEZONE
+# Use lubridate::force_tz() to 
+dttm_force # Date comes in as being UTC
+dttm_force <- lubridate::force_tz(dttm_force, "US/Eastern") # But the observation was made in EDT timezone so we need to force the tz 
+dttm_force # Now the date and time is associated with the correct timezone
+
+# Take a look under the hood at moment of time
+as.numeric(dttm_raw)
+as.numeric(dttm_attr)  # Same as dttm_raw
+as.numeric(dttm_force) # Offset 
+
+# Add readr date parsing section! 
+
+
+
+
