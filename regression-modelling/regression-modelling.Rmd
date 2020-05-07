@@ -1,0 +1,893 @@
+---
+title: "Regression Modelling with R"
+author: "Sean Walsh <sdwalsh335@gmail.com>"
+date: "07 May 2020"
+output:
+  html_document:
+    number_sections: yes
+    theme: sandstone
+    toc: yes
+    toc_depth: 3
+    toc_float:
+      smooth_scroll: FALSE
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+```{r setup, include = FALSE}
+# Set global options for code chunks and load required R packages and data
+library(tidyverse)
+library(zoo)
+library(car)
+library(broom)
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message = FALSE,
+                      cache = FALSE)
+
+# Motor Trend car data
+data("mtcars")
+
+# Set working directory
+setwd("C:/Users/seanwalsh/my-R")
+
+# Climate data
+climate_data <- read_csv("climate-change.csv",
+                         col_names = TRUE)
+
+# Student reading score data
+pisa_train <- read_csv("pisa-train.csv",
+                       col_names = TRUE)
+
+pisa_test <- read_csv("pisa-test.csv",
+                      col_names = TRUE)
+
+# Google Trends flu data
+flu_train <- read_csv("flu-train.csv",
+                      col_names = TRUE)
+
+flu_test <- read_csv("flu-test.csv",
+                     col_names = TRUE)
+
+# Radioactive decay data
+decay <- read_csv("decay.csv",
+                  col_names = TRUE)
+
+
+# Note that readr leaves a useful note-to-self in spec
+attr(climate_data, "spec")
+
+# And we can check for data import errors
+problems(climate_data)
+```
+
+# Simple Linear Regression
+
+## Example 1: Predicting fuel efficiency using Motor Trend data (1973-74)
+
+### Introduction
+
+**Ordinary Least Squares (OLS) linear regression**, first developed by the French mathematician Adrien-Marie Legendre in 1805, is a statistical technique used for the analysis and modelling of a linear relationship between a continuous dependent variable and one or more independent variables (which can be continuous or categorical). Put simply, if the relationship between two variables is approximately linear, then a straight line can be fit to the data in order to model the relationship. Linear regression is used for both prediction and statistical inference. The regression equation (i.e. the equation of a straight line) using one covariate takes the following form
+
+$$
+y = a + bx + e  
+$$
+
+Where $y$ is the *dependent* variable, $b$ is the *slope* of the line, $x$ is the value of the *independent* variable, $a$ is the *intercept* term and $e$ is the error (i.e. the residual).
+
+The formula can also be written more formally
+
+$$
+y_i = \beta_{0} + \beta_{1}x_{1} + e_i
+$$
+
+where $\beta_{0}$ is now the intercept and $\beta_{1}$ is the slope of the line, or coefficient.
+
+**Multiple linear regression** is an extension of simple linear regression where additional covariates are accommodated
+
+$$
+y_i = \beta_{0} + \beta_{1}x_{1} + \beta_{2}x_{2} + \beta_{3}x_{3} + ... + \beta_{p}x_{p} + e_i 
+$$
+
+Given the data, **we want to find the values of the slope and intercept that make the data most likely**. The line of best fit is calculated in R using the base `lm()` function which automatically calculates the slope and intercept coefficients. The slope and intercept can be calculated by hand from five summary statistics: the standard deviations of $x$ and $y$, the means of $x$ and $y$, and **Pearson's correlation coefficient** of $x$ and $y$.
+
+```{r, eval = FALSE}
+# How to calculate the slope in univariate linear regression
+slope <- cor(x, y, method = "pearson") * (sd(y) / sd(x))
+
+# How to calculate the intercept in univariate linear regression
+intercept <- mean(y) - (slope * mean(x))
+```
+
+The **model assumptions** associated with the use of linear regression are:
+  
+1. A linear relationship between the dependent variable and the covariate(s) of interest
+2. Residuals/errors of fit are normally distributed 
+3. No/little multicollinearity (which affects significance tests/VIFs can assess)
+4. Homoscedasticity (constant variance in residuals/errors of fit)
+5. Outliers do not negatively impact the regression
+
+We can test these assumptions using scatterplots, residual histograms, Q-Q plots, VIFs and residual variance plots. If the residuals are normally distributed, then the Q-Q plot should form a relatively straight line (focus on the centre section as the tails usually deviate). **The important thing to note is that we must always check the model assumptions**.
+
+### Exploration
+
+The first model assumption can be quickly checked by plotting the data to see what type of relationship exists between the variables of interest. In most cases, we already know a linear relationship exists and the null hypothesis tested in linear regression is that the slope is equal to zero. We will use the built-in `mtcars` dataset in R and visualise the relationship between fuel efficiency `mpg` and engine displacement `disp`.
+
+```{r}
+# Scatterplot of mpg vs. disp
+mtcars %>%
+  ggplot(aes(x = disp,
+             y = mpg)) +
+  geom_point(pch = 21,
+             fill = "red") +
+  geom_smooth(method = "lm",
+              se = FALSE)
+```
+
+Upon visual inspection, the relationship is not that linear. The residuals are all positive at lower values of `disp`, then mostly negative as `disp` increases before becoming mostly positive again at higher values. The **strength of a straight line association** between two normally distributed continuous variables can be quantified using Pearson's correlation coefficient
+
+```{r}
+# Pearson's correlation coefficient
+cor(mtcars$disp, 
+    mtcars$mpg,
+    method = "pearson")
+
+# The order of arguments does not matter
+cor(mtcars$mpg,
+    mtcars$disp,
+    method = "pearson")
+```
+
+Note that *correlation does not imply causation*; it just allows one to quantify an association. To determine causality, or at least provide evidence which supports the notion, one must typically carry out a well designed experiment (e.g. a randomised controlled trial) where the only systematic difference between groups is the treatment of interest or the thing you are interested in. **Randomisation** reduces bias and **replication** increases the reliability of results. **Statistical inference** reflects the intention to apply the experiment results, which involve a limited sample of data, to a larger process or population.
+
+Another measure of correlation is **Spearman's Rank correlation coefficient**. This is the *non-parametric* version of Pearson's, which is *parametric*. Spearman's is less restrictive but both are associated with assumptions that are important to check. For Pearson's, both variables must be continuous, normally distributed and part of a random sample. For Spearman's, one or both variables can be continuous or ordinal, the relationship must be *monotonic*, and the variables must be part of a random sample. Thus, Spearman's rank quantifies the strength of the monotonic association between two variables while Pearson's quantifies the strength of a straight line association.
+
+If the relationship is non-linear, and linear regression is still desired, a common approach is to transform the response variable in order to coerce the relationship to one that approaches linearity. **It is also good practice to transform a skewed dependent variable to a more normal one as this reduces the impact of any outliers on the residuals**. Note that $$y_i = \beta_{0} + \beta_{1}x_{1} + e_i$$ is not the only two-parameter model for describing the relationship between a dependent variable and a single continuous explanatory variable. Model choice is vital and alternative options include transformations such as natural log, base ten log, exponential, square root, power law, cube root and inverse. The `mpg` and `disp` relationship is not linear but it can be coerced using a natural log transformation of the dependent variable `mpg`
+
+```{r}
+# Scatterplot of log(mpg) vs. disp
+mtcars %>%
+  ggplot(aes(x = disp, 
+             y = log(mpg))) +
+  geom_point(pch = 21,
+             fill = "red") +
+  geom_smooth(method = "lm",
+              se = FALSE)
+```
+
+Now, if we compare Pearson's correlation coefficients we see an improvement. Spearman's rank is also shown for comparison
+
+```{r}
+# Pearson's correlation coefficient
+cor(mtcars$disp, 
+    log(mtcars$mpg),
+    method = "pearson")
+
+# Spearman's rank
+cor(mtcars$disp, 
+    log(mtcars$mpg),
+    method = "spearman")
+```
+
+### Statistical Modelling
+
+The next step is to fit a linear regression model to the data. We model `log(mpg)` as a function of `disp` based on our data exploration earlier 
+
+```{r}
+# Fit a linear regression model using the formula method
+# We have a complete case data set so do not need to worry about missing values and how the lm() function treats them
+linear_fit1 <- lm(log(mpg) ~ disp, 
+                  data = mtcars)
+
+# Get the model output
+summary(linear_fit1)
+```
+
+Our maximum likelihood model above gives a five-number summary of the residual distribution. The goodness of fit can be quantified using the **residual standard error (RSE)**, which rarely differs from the **root mean squared error (RMSE)**, and the $r^2$ metric. The RMSE/RSE quantifies the variance of the model errors and is an absolute measure of fit with units identical to the response variable. **The goal of linear regression is to minimise the RMSE**. The *baseline* model is simply the mean of $y$ and forms a horizontal line through the data. The RMSE is mimimised by rotating this horizontal line until the slope that bests fit the data is found. 
+
+The $r^2$ metric for a simple linear regression is the Pearson correlation coefficient, $r$, squared and it quantifies the proportion of variance in $y$ explained by the model. It is important to consider $r^2$ when using a linear regression model for prediction. **The RMSE and $r^2$ should also be assessed on any test set predictions**.
+
+What is the difference between the adjusted and multiple $r^2$ metrics given in the output? Adjusted $r^2$ should be used in multiple linear regression as it penalises for additional predictors which can increase $r^2$ even though there may be little association with the response variable.
+
+Looking at the model coefficients, we see both the intercept and engine displacement coefficient estimates have highly significant $p$-values. The $t$-value is a measure of a coefficient's "*signal-to-noise*" strength and is simply the estimate divided by its corresponding standard error. A large absolute $t$-value corresponds to a low $p$-value and a strong signal with the sign indicating the effect direction.
+
+Note that there is also a global $p$-value which is highly significant. This $p$-value represents the statistical significance of the overall regression. There may be cases where insignificant covariates are present in a model but the overall regression is still statistically significant. In such cases, it is good to prune the model down to its simplest form (i.e. the principle of parsimony) using informed **backwards elimination**.
+
+```{r}
+# r-squared
+r2 <- paste("r^2 == ", 0.78)
+
+# Plot the data and the simple linear regression model
+mtcars %>%
+  ggplot(aes(x = disp, 
+             y = log(mpg))) +
+  geom_point(pch = 21,
+             fill = "red") +
+  geom_smooth(method = "lm",
+              se = FALSE) + 
+  annotate("text",
+           label = "p < 0.001",
+           x = 100,
+           y = 2.5) +
+  annotate("text",
+           label = r2,
+           parse = TRUE,
+           x = 100,
+           y = 2.4)
+```
+
+The variance about the line of best fit looks okay. We should now carefully check model assumptions. As we are dealing with just one covariate in simple linear regression, we do not need to check for multicollinearity. If it were a multiple linear regression, then we would use the `cor()` function and a suitable threshold like 0.7 or 0.8 for the collinear cut-off. We could also use **variance inflation factors** (VIFs) to identify the presence of collinearity. VIFs over 10 are cause for deep concern and VIFs over 4 need further investigation. VIFs around 1 are good. Minor outliers in the data do not cause a serious problem here.
+
+Passing the linear model to the `plot()` function returns a series of model diagnostic plots. We are mostly interested in the top two. The first plot allows us to check the homoscedasticity assumption (i.e. constant variance of the residuals); no "*fan*" pattern is obvious and we have a "*starry night sky*". The Q-Q plot allows us to check the normality of residual errors; most of the points are generally close to the diagonal so this assumption is also met.
+
+We do not need to investigate the other plots in the series but note that Cook's distance does provide useful information on the influence of any outliers that may be present.
+
+```{r}
+# Model diagnostics
+par(mfrow = c(2, 2))
+plot(linear_fit1)
+```
+
+What can we do if heteroscedasticity is present (possibly as a result of a skewed dependent variable) and we are worried that the regression might lead to unstable predictions? The model can be rebuilt using different covariates which can be transformations of the originals. Another option is to use a **Box-Cox** or a log transformation, as we have done, to coerce the dependent variable to an approximately normal distribution
+
+Let's go back to our model. The coefficients 
+
+```{r}
+# Get the intercept and slope
+coef(linear_fit1)
+```
+
+should be identical to
+
+```{r}
+# Formulae from earlier
+slope <- cor(mtcars$disp, log(mtcars$mpg)) * (sd(log(mtcars$mpg)) / sd(mtcars$disp))
+intercept <- mean(log(mtcars$mpg)) - (slope * mean(mtcars$disp))
+
+intercept; slope
+```
+
+Recall that **standard errors are unreliability measures**. Increasing the spread of the $x$ values reduces unreliability of the estimated slope. For the intercept, uncertainty declines with increasing sample size and confidence in predictions made with linear regression declines with the square of the distance between the mean value of $x$ and the value of $x$ where the prediction is to be made. Thus, when the origin of the graph is far from the mean value of $x$, the standard error of the intercept will be large, and vice versa.
+
+## Model interpretation 
+
+Looking at our simple model, the $p$-value for engine displacement is highly significant and $r^2$, a measure of variance explained, is strong at 0.78. The take home message from the output is that for every unit increase in engine displacement there is, on average, a -0.002115 change in fuel efficiency (via the log of mpg). Therefore, we infer from the model that fuel efficiency decreases with increasing engine displacement.
+
+## Further considerations
+
+The number of data points is important and can influence the $p$-values in the model. A rule of thumb for OLS linear regression is that *at least 20 data points* are required for a valid model. The $p$-value is the probability of observing data as (or more) extreme than those under investigation assuming a null distribution (i.e. the null hypothesis that there is no relationship between $x$ and $y$, and the coefficient of $x$ is equal to zero). 
+
+You may come across suggestions to standardise the explanatory covariates in regression models. This involves mapping the same scale ($z$-scores) to each covariate and results in the mean value of each covariate being 0. This can be useful depending on how the model is to be interpreted and communicated. When interpreting the intercept, it is described as the expected value of $y$ when all standardised covariates are at their mean value (zero). Without standardisation, it is the expected value of $y$ when $x$ is equal to the absolute value of 0. Standardising is not bad or wrong, it is just unnecessary most of the time.
+
+Sometimes the literal translation of the intercept is nonsensical but we ignore it in most cases. Statistical significance is also not always important but it just tells us whether the intercept is equal to zero or not. For example, the expected value of `log(mpg)` when engine displacement is zero is 3.45. Obviously this makes no sense as there would be no engine to measure fuel efficiency from if the displacement was zero cubic inches. At the time of writing, the smallest engine displacement award actually goes to the *Tata Nano* (38 cubic inches).
+
+In our simple linear regression model, we have a statistically significant intercept coefficient. What does this mean? It just means that the intercept estimate is significantly different from zero. However, as mentioned earlier it cannot be taken literally. We just use it as a constant that is added to, or subtracted from, the linear predictor(s).
+
+### Multiple Linear Regression 
+
+Multiple linear regression is an extension of simple linear regression. Additional covariates are added as necessary and we assume each one has a linear relationship with the dependent variable $y$. Let's add some more variables to our first model from earlier
+
+```{r}
+# Create a multiple linear regression model
+model_2 <- lm(log(mpg) ~ disp + wt + factor(cyl) + factor(gear) + hp, 
+              data = mtcars)
+
+# Model summary
+summary(model_2)
+#influence.measures(model_2)
+```
+
+Engine displacement becomes insignificant when vehicle weight, number of cylinders, horse-power and gears are included as covariates. Multicollinearity is at play here as some of these covariates are strongly correlated
+
+```{r}
+# Create the correlation matrix
+cor(mtcars[c(2, 3, 4, 6, 10)])
+vif(model_2)
+```
+
+**Whenever we want to include more than one covariate in any regression model, we use the literature or domain knowledge to select candidate predictors**. It is good practice to fit univariate regression models to get the individual effect of each covariate before plugging candidates into a multiple regression model. Any major changes in parameter estimates usually signal multicollinearity or a convergence issue. **Backwards elimination** is the advised approach for feature selection and is preferred to any type of stepwise or automated approaches which can be [flawed](https://www.stata.com/support/faqs/statistics/stepwise-regression-problems/). Let's remove covariates that are highly correlated 
+
+```{r}
+# Create a multiple linear regression model using wt and hp
+# Assess RMSE
+final_model <- lm(log(mpg) ~ wt + hp, 
+                  data = mtcars)
+
+# Model summary
+summary(final_model)
+```
+
+All model coefficients are statistically significant and the RSE and adjusted $r^2$ are also better than our two-parameter model from earlier. Model diagnostics can be carried out using the `plot()` function once more and VIFs are also calculated
+
+```{r}
+# Model diagnostics
+par(mfrow = c(2, 2))
+plot(final_model)
+vif(final_model) # VIFs
+```
+
+A nice one line summary of our best model 
+
+```{r}
+# One line summary of the best model
+glance(final_model) %>% 
+  knitr::kable()
+```
+
+### Prediction 
+
+Making predictions with a model is easy in R. The `predict()` function takes as arguments the model object and a dataframe of observations to predict. The following example uses the multiple linear regression model to predict the fuel efficiency of each vehicle in the `mtcars` dataset. Note that the predicted values are log transformed so they need to be converted back, via exponentiation, to the original `mpg` values for interpretation.
+
+```{r}
+# Get predictions
+predict(final_model, 
+        newdata = mtcars)
+```
+
+In practice, we would partition an unseen *test* set and *train* a model on the remaining data (perhaps using an 20%/80% split, respectively). The model would then be used to predict the unseen test set observations and sensible performance metrics such as RMSE and $r^2$ would be assessed to determine model generalisability. **Cross-validation** is one of the best strategies to use when training, tuning and validating predictive models although parameter tuning is not a consideration when performing linear regression.
+
+```{r}
+# Partition train and test sets
+set.seed(1) # Set seed for reproducibility
+data_part <- createDataPartition(y = mtcars$mpg, 
+                                 p = 0.8, 
+                                 list = FALSE)
+training <- mtcars[data_part, ]
+test <- mtcars[-data_part, ]
+```
+
+Build a model on the training data and predict unseen test observations. In practice, model diagnostics and assumption checks would need to be performed before prediction. We aim to minimise the root mean squared error (RMSE) and use its value as a measure of predictive performance.
+
+```{r}
+# Train a multiple linear regression model on the training data
+prod_mdl <- lm(log(mpg) ~ wt + hp, 
+               data = training)
+
+# Make predictions on test set
+mdl_preds <- predict(prod_mdl, 
+                     newdata = test)
+
+# Assess model performance using the RMSE 
+# Note the antilog conversion back to the original mpg units 
+# The RMSE is 2.5 mpg and this is our mean error on the test data
+RMSE(exp(mdl_preds), test$mpg)
+```
+
+```{r}
+# Clean out the environment
+rm(mtcars,
+   linear_fit1,
+   model_2,
+   final_model,
+   intercept,
+   r2,
+   slope,
+   data_part,
+   test,
+   training,
+   mdl_preds,
+   prod_mdl)
+```
+
+## Example 2: Predicting the change in global mean surface temperature using climate data
+
+Let's first have a look at the data
+
+```{r}
+# Explore the variables (are there any missing values or weird observations?)
+# Do some variables need to be discretised or engineered in any way?
+glimpse(climate_data)
+```
+
+```{r}
+# Calculate some summary statistics
+# This is a great way to immediately spot anything odd
+summary(climate_data)
+```
+
+This is a nice complete case data set. Let's run a check for missing values in any case
+
+```{r}
+# Check for NAs
+sapply(climate_data, 
+       function(x) {
+         sum(is.na(x))
+         }
+       )
+```
+
+Next, we split the data into **training** and **test** sets. We will use the training set to build a model and the test set to assess predictive performance.
+
+```{r}
+# Clean up the CFC variable names
+climate_data <- rename(climate_data, 
+                       CFC11 = `CFC-11`, 
+                       CFC12 = `CFC-12`)
+
+# Split the data into "training" and "test" sets
+training <- climate_data %>%
+  filter(Year < 2007) # Observations up to and including 2006
+
+test <- climate_data %>%
+  filter(Year >= 2007) # Observations after 2006
+```
+
+Build a linear regression model to predict the dependent variable Temp. Use MEI, CO2, CH4, N2O, CFC.11, CFC.12, TSI and Aerosols as independent variables. Do not include Year and Month.
+
+```{r}
+# Build a model
+climate_lm1 <- lm(Temp ~ MEI + CO2 + CH4 + N2O + CFC11 + CFC12 + TSI + Aerosols,
+                  data = training)
+```
+
+Note that **a robust approach is to model univariately and store the estimated coefficients**. Then one should model multivariately using all candidate covariates. Once we have univariate coefficients and coefficients from the multivariate model, we should compare them to assess for collinearity and other sources of potential error. If there are big differences in coefficients, there is likely an issue that needs investigating.
+
+```{r}
+# Inspect the model
+summary(climate_lm1)
+```
+
+The model has a global *p*-value < 0.05 so it is statistically significant and the adjusted $r^2$ is good at 0.74. However, the coefficients for N2O and CFC11 are negative which does not seem right as they are GHGs known to have a warming effect on the Earth's atmosphere. Collinearity is likely the issue here as these variables are definitely correlated with others in the data set.
+
+Correlations between the assumed independent variables in the training data are calculated using Pearson's correlation coefficient. Pearson's CC assumptions are as follows:
+
+1) continuous variables
+2) normally distributed variables
+3) data are a random sample 
+
+```{r}
+# Exclude Year and Month as well as the dependent variable Temp (always omit the dependent variable) 
+# Use -0.7 and 0.7 as the cut-offs for strong correlation 
+cor(training[ , 3:10]) %>% 
+  round(2)
+```
+
+We can also check for multicollinearity using variance inflation factors (VIFs). We see that all of the GHG coefficient variances are inflated. This indicates that they are correlated with one another.
+
+```{r}
+# Inspect VIFs in the model (> 4 is cause for moderate concern, > 10 is deeply concerning)
+vif(climate_lm1)
+```
+
+We can perform backwards elimination to simplify the model and deal with the collinearity. Focus on the N2O variable and build a model with only MEI, TSI, Aerosols and N2O as independent variables.
+
+```{r}
+# Model 2
+climate_lm2 <- lm(Temp ~ MEI + TSI + Aerosols + N2O,
+                  data = training)
+```
+
+Inspect the reduced model
+
+```{r}
+# Inspect the model
+summary(climate_lm2)
+```
+
+and check the VIFs
+
+```{r}
+# Check the VIFs
+vif(climate_lm2)
+```
+
+The reduced model has a global *p*-value < 0.05 and the adjusted $r^2$ is good at 0.72. The parameter estimate for N2O now makes sense as it is positive and in agreement with scientific consensus. VIFs are all around 1 which indicates no multicollinearity issues.
+
+**Linear regression models carry with them some important assumptions** and **IN STATISTICS WHEN WE MAKE ASSUMPTIONS WE NEED TO TEST THEM!**
+
+The model assumptions are:
+
+1) A linear relationship between covariates and the dependent variable (as this is what the model equation assumes)
+2) Normally distributed residuals
+3) Constant variance across the residuals
+4) No multicollinearity
+5) No outliers affecting the fitted model
+
+We can test these assumptions using VIFs and a range of diagnostic plots.
+
+```{r}
+# Model diagnostics
+plot(climate_lm2)
+```
+
+The residuals vs the fitted values plot shows constant variance (i.e. homoscedasticity). The normal Q-Q plot shows us that the residuals are normally distributed. We focus on the middle section of the distribution and not so much on the tails. The VIFs calculated earlier show us that collinearity is not a problem in this model.
+
+All is good with our second climate model. Next, we will perform model validation on the test set.
+
+```{r}
+# Predict Temp for the test data
+preds <- predict(climate_lm2,
+                 newdata = test)
+
+# Calculate the sum of squared errors for the predictions
+SSE <- sum((test$Temp - preds) ^ 2)
+
+# Calculate the total sum of squares using the MEAN OF THE TRAINING SET TEMP!
+# The mean Temp from the training data is the baseline model we want to improve on
+SST <- sum((test$Temp - mean(training$Temp)) ^ 2)
+
+# Calculate the RMSE of the test set predictions
+sqrt(SSE / nrow(test))
+#caret::RMSE(preds, test$Temp)
+```
+
+Finally, calculate $r^2$ for the test set predictions. The model that returns the lowest $r^2$ or RMSE on the test data would be chosen for analysis and possible production as it would explain the greatest amount of variance. This model explains 50% of the variance in the test set and has an RMSE of 0.11.
+
+```{r}
+# R-squared for predictions
+1 - (SSE / SST) # 50% of the variance explained relative to the baseline model
+```
+
+```{r}
+# Flush
+rm(climate_data,
+   training,
+   test,
+   climate_lm1,
+   climate_lm2,
+   preds,
+   SSE,
+   SST)
+```
+
+## Example 3: Predicting average reading test scores from the PISA data set
+
+```{r}
+# Mean reading test score for males (use the mean for this example)
+tapply(pisa_train$readingScore, 
+       pisa_train$male, 
+       mean,
+       na.rm = TRUE)
+```
+
+```{r}
+# Which variables have at least one missing value?
+sapply(pisa_train,
+       function(x) {
+         sum(is.na(x))
+         }
+       )
+```
+
+The linear regression routine skips over observations with missing data. Let's remove incomplete observations from both the training and test sets to simplify this example. In practice, careful consideration would have to be given to what to do with missing values. Data that are missing not at random, missing at random and missing completely at random need to be identified and dealt with if they are to be used for analysis.
+
+```{r}
+# Create complete case training and test data sets
+pisa_train <- na.omit(pisa_train)
+pisa_test <- na.omit(pisa_test)
+```
+
+To include unordered factors in a linear regression model, we define one level as the "*reference level*" and add a binary variable for each of the remaining levels. In this way, a factor with $n$ levels is replaced by $n$-1 binary variables. **The reference level is typically selected to be the most frequently occurring level in the dataset**. All other levels are compared against this reference level.
+
+As an example, consider an unordered factor variable "*color*", with levels "*red*", "*green*", and "*blue*". If "*green*" were the reference level, then we would add binary variables "*colorred*" and "*colorblue*" to a linear regression problem. All red examples would have `colorred=1` and `colorblue=0`. All blue examples would have `colorred=0` and `colorblue=1`. All green examples would have `colorred=0` and `colorblue=0`.
+
+For discrete categorical data, R always uses 0 as the reference group unless specified otherwise. R also uses alphabetical ordering if no reference level is specified. The `read_csv()` function imports text data as character vector type. R uses alphabetic ordering to determine the reference value of factors so the reference for `raceeth` is "*American Indian/Alaska Native*" when we convert it to a factor. However, "*White*" is the most frequent ethnicity so we will change the reference to that instead.
+
+```{r}
+# Relevel the race/ethnicity factor to have "White" as the reference
+pisa_train$raceeth <- factor(pisa_train$raceeth)
+pisa_test$raceeth <- factor(pisa_test$raceeth)
+
+pisa_train$raceeth <- relevel(pisa_train$raceeth, ref = "White")
+pisa_test$raceeth <- relevel(pisa_test$raceeth, ref = "White")
+```
+
+Create a multiple linear regression model with reading score as a function of all covariates in the training data set
+
+```{r}
+# Create a linear regression model using all covariates
+lm_score <- lm(readingScore ~ ., 
+               data = pisa_train)
+
+# Inspect the model
+summary(lm_score)
+```
+
+Note that this $r^2$ is lower than models in previous examples. This does not necessarily imply that the model is of poor quality. More often than not, it simply means that the prediction problem at hand (predicting a student's test score based on demographic and school-related variables) is more difficult than other prediction problems (like predicting a team's number of wins from their runs scored and allowed, or predicting the quality of wine from weather conditions).
+
+Consider two students A and B. They have all variable values the same, except that student A is in grade 11 and student B is 
+in grade 9. What is the predicted reading score of student A minus the predicted reading score of student B?
+
+The estimated effect of a unit increase in grade on reading score is **29.542707** so the difference is predicted to be **29.542707 * 2** = 59 points.
+
+What is the meaning of the coefficient associated with variable raceethAsian? This is the predicted difference in reading score between an Asian student and a white student who is otherwise identical. Based on the $p$-values, which covariates are candidates for backwards elimination? **Unless all levels of a factor (e.g. raceeth) are insignificant, do not remove**.
+
+```{r}
+# Simplify the model
+lm_score2 <- lm(readingScore ~ grade + 
+                  male + 
+                  raceeth + 
+                  computerForSchoolwork + 
+                  read30MinsADay +
+                  publicSchool +
+                  schoolSize,
+                data = pisa_train)
+
+# Model summary
+summary(lm_score2)
+```
+
+Okay, again the $r^2$ values are not impressive but this is likely to be due to the fact that this is a hard prediction problem. Let's make predictions on the test set using this model
+
+```{r}
+# Make predictions
+preds_score <- predict(lm_score2, 
+                       newdata = pisa_test)
+```
+
+and calculate the SSE
+
+```{r}
+# SSE on the test set
+SSE <- sum((pisa_test$readingScore - preds_score) ^ 2)
+SSE
+```
+
+and finally the RMSE
+
+```{r}
+# RMSE on the test set
+sqrt(SSE / nrow(pisa_test))
+```
+
+The RMSE on the test set is 80 points. Now let's calculate the SST using the baseline model
+
+```{r}
+# Baseline prediction and test set SSE (the null model predicts the arithmetic mean of the dependent variable)
+cat("Baseline prediction of readingScore from the null model:", mean(pisa_train$readingScore))
+preds_null <- mean(pisa_train$readingScore)
+
+# SST of the null/baseline model on the test set
+SST_null <- sum((pisa_test$readingScore - preds_null) ^ 2)
+```
+
+and *R2* on the test set. Our model accounts for 19% of the variance in the test set so this is indeed a difficult prediction problem.
+
+```{r}
+# Test set R-squared value of lm_score (our fitted linear regression model)
+# Our model explains about 19% of the variance in readingScore in the test set relative to the baseline model
+1 - (SSE / SST_null)
+```
+
+## Example 4: Predicting ILI physician visits using Google search queries 
+
+Google Trends allows public retrieval of weekly counts for every query searched by users around the world. For each location, the counts are normalised by dividing the count for each query in a particular week by the total number of online search queries submitted in that location during the week. Then, the values are adjusted to be between 0 and 1.
+
+"Week" - The range of dates represented by this observation, in year/month/day format.
+"ILI" - This column lists the percentage of ILI-related physician visits for the corresponding week.
+"Queries" - This column lists the fraction of queries that are ILI-related for the corresponding week, adjusted to be between 0 and 1 (higher values correspond to more ILI-related search queries).
+
+```{r}
+# Descriptive statistics
+summary(flu_train)
+```
+
+Week values are character strings. ILI-related weekly visits as a percentage of all visits ranges from 0.5% to 7.6%. Weekly ILI-related Google search queries as a proportion of all queries ranges from 0.04 to 1.00.
+
+```{r}
+# Which week corresponds to the highest percentage of ILI-related physician visits
+flu_train %>%
+  filter(ILI == max(ILI))
+
+# Which week corresponds to the highest ILI-related query fraction
+flu_train %>%
+  filter(Queries == max(Queries))
+```
+
+```{r}
+# We are interested in predicting the ILI variable so that will be our dependent variable
+# Plot the distribution of ILI (we have right skew in these data)
+flu_train %>%
+  ggplot(aes(x = ILI)) +
+  geom_histogram(colour = "white")
+```
+
+As discussed earlier, when handling a skewed dependent variable it is often useful to predict the logarithm of the dependent variable instead of the dependent variable itself. This prevents unusually large or small observations (i.e. skew) from having an undue influence on the sum of squared errors. In this problem, we will predict the natural log of the ILI variable, which can be computed in R using the `log()` function.
+
+```{r}
+# Plot the natural logarithm of ILI versus Queries. What does the plot suggest?
+flu_train %>%
+  ggplot(aes(x = Queries,
+             y = log(ILI))) +
+  geom_point()
+```
+
+Which model best describes our estimation problem?
+
+**log(ILI) = intercept + (coefficient * Queries)**, where the coefficient is positive. There is a strong positive relationship between log(ILI) and Queries.
+
+```{r}
+# Create a linear regression model
+flu_lm <- lm(log(ILI) ~ Queries,
+             data = flu_train)
+
+# Inspect the model
+summary(flu_lm)
+```
+
+Over 70% of the variance in log(ILI) is explained and the model is statistically significant.
+
+For a single variable linear regression model, there is a direct relationship between the $r^2$ and the correlation between the independent and the dependent variables. What is the relationship we infer from our problem? 
+
+```{r}
+# Pearson's correlation coefficient
+corl <- cor(log(flu_train$ILI),
+            flu_train$Queries)
+
+# R-squared
+cat("R-squared is equal to the correlation ^ 2:", corl ^2)
+```
+
+```{r}
+# Make predictions
+pred_test1 <- predict(flu_lm, 
+                      newdata = flu_test)
+```
+
+The dependent variable in our model is log(ILI), so pred_test1 contains **predictions of the log(ILI) value**. We are instead interested in obtaining predictions of the actual ILI value. Therefore, we can convert from predictions of log(ILI) to predictions of actual ILI via the antilog using the `exp()` function. 
+
+```{r}
+# Take the antilog of the predictions on the log scale
+pred_test2 <- exp(pred_test1)
+```
+
+```{r}
+# What is our estimate for the percentage of ILI-related physician visits for the week of 11 March 2012?
+pred_test2[which(flu_test$Week == "2012-03-11 - 2012-03-17")]
+```
+
+What is the relative error betweeen the estimate (our prediction) and the observed value for the week of 11 March 2012? 
+Note that the relative error is calculated as
+
+Observed ILI - (Estimated ILI / Observed ILI))
+
+```{r}
+pred_test2[which(flu_test$Week == "2012-03-11 - 2012-03-17")]
+flu_test[which(flu_test$Week == "2012-03-11 - 2012-03-17"), ]
+```
+
+(2.293422 - 2.187378) / 2.293422
+
+```{r}
+# What is the RMSE of the predictions?
+SSE <- sum((flu_test$ILI -  pred_test2) ^ 2)
+SST <- sum((flu_test$ILI - mean(flu_train$ILI)) ^ 2)
+RMSE <- sqrt(SSE / nrow(flu_test))
+
+# What is the R-squared of the predictions?
+1 - SSE / SST
+```
+
+Our model accounts for about 32% of the variance in the test set ILI.
+
+The observations in this dataset are consecutive weekly measurements of the dependent and independent variables. This sort of dataset is called a "**time series**." Often, statistical models can be improved by predicting the current value of the dependent variable using the value of the dependent variable from earlier weeks. In our models, this means we will predict the ILI variable in the current week using values of the ILI variable from previous weeks.
+
+First, we need to decide the amount of time to lag the observations. Because the ILI variable is reported with a 1- or 2-week lag, a decision maker cannot rely on the previous week's ILI value to predict the current week's value. Instead, the decision maker will only have data available from 2 or more weeks ago. We will build a variable called ILI_lag2 that contains the ILI value from 2 weeks before the current observation.
+
+The value of -2 passed to lag means asks to return 2 observations before the current one; 
+A positive value would return future observations; 
+`na.pad = TRUE` means add missing values for the first two weeks of our dataset where we cannot compute the data from 2 weeks earlier.
+
+```{r}
+# Preprocess the data
+flu_train$ILI_lag2 <- stats::lag(zoo(flu_train$ILI), -2, na.pad = TRUE) %>% 
+  coredata()
+
+flu_test$ILI_lag2 <- stats::lag(zoo(flu_test$ILI), -2, na.pad = TRUE) %>%
+  coredata()
+
+# Plot the relationship between log(ILI_lag2) and log(ILI)
+flu_train %>%
+  ggplot(aes(x = log(ILI),
+             y = log(ILI_lag2))) +
+  geom_point()
+
+# Build a linear regression model
+flu_lm2 <- lm(log(ILI) ~ Queries + log(ILI_lag2),
+                 data = flu_train)
+
+summary(flu_lm2)
+
+# Impute 
+flu_test[1, "ILI_lag2"] <- flu_train[416, "ILI"]
+flu_test[2, "ILI_lag2"] <- flu_train[417, "ILI"]
+
+# Predict ILI using the new linear regression model (note that the predictions of ILI are on a log scale)
+preds_test3 <- predict(flu_lm2, 
+                       newdata = flu_test)
+
+# Take the antilog
+preds_test4 <- exp(preds_test3)
+
+# Test set RMSE
+SSE <- sum((flu_test$ILI - preds_test4) ^ 2)
+sqrt(SSE / nrow(flu_test))
+```
+
+## Example 5: a non-linear example using radioactive decay data
+
+```{r}
+# Plot the relationship between amount and time
+decay %>%
+  ggplot(aes(x = time,
+             y = amount)) +
+  geom_point()
+```
+
+Is this a linear relationship? It looks a little curved to me. Let's fit a straight line linear regression model to the data
+
+```{r}
+# Fit a straight line linear regression model
+decay %>%
+  ggplot(aes(x = time,
+             y = amount)) +
+  geom_point() +
+  geom_smooth(method = "lm",
+              se = FALSE)
+```
+
+The residuals are mostly positive at low values of time, then mostly negative before being mostly positive again at higher values of time. This model is not a good fit for these data. Let's inspect the model output
+
+```{r}
+# Create a two-parameter model
+mdl_2p <- lm(amount ~ time,
+             data = decay)
+
+summary(mdl_2p)
+```
+
+A decent $r^2$ and RMSE but not really an adequate model. There is a lesson to be learned here. **Sometimes, RMSE and R-squared are not enough to determine model adequacy**. Let's try a log transformation of amount
+
+```{r}
+# Now plot the log transformed amount vs time
+decay %>%
+  ggplot(aes(x = time,
+             y = log(amount))) +
+  geom_point()
+```
+
+And inspect the new model
+
+```{r}
+# Update the model 
+mdl_2p <- lm(log(amount) ~ time,
+             data = decay)
+
+summary(mdl_2p)
+```
+
+A better $r^2$ this time. However, there is non-constant variance present across predicted values and this is a problem. The model predicts poorly at lower values of time. 
+
+```{r}
+# Check the model diagnostic plots
+plot(mdl_2p)
+```
+
+What we need in this situation is a **non-linear model**. A curve is made up of lots of little sections of straight lines. In these data, the relationship can be better modelled by an exponential equation. If we take the parameter estimate for `time` of -0.068528 and the intercept estimate of 4.547386, we can fit an exponential curve to the data that does a better job of explaining the variance in `amount`.
+
+```{r}
+plot(decay$time, 
+     decay$amount,
+     pch = 21,
+     col = "blue",
+     bg = "green")
+
+xv <- seq(0, 30, 0.25) # Small sections of the curve
+xy <- exp(4.547386) * exp(-0.068528 * xv) # The 
+lines(xv, xy, col = "red")
+```
+
+## Polynomial regression
+
+## Non-linear regression
+
+## Generalised Additive Models
+
+
+
+
+
+
