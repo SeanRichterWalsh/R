@@ -1,7 +1,7 @@
 ---
 title: "Regression Modelling with R"
 author: "Sean Walsh <sdwalsh335@gmail.com>"
-date: "07 May 2020"
+date: "10 May 2020"
 output:
   html_document:
     number_sections: yes
