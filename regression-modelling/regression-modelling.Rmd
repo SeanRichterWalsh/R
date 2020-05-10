@@ -70,7 +70,7 @@ problems(climate_data)
 
 ### Introduction
 
-**Ordinary Least Squares (OLS) linear regression**, first developed by the French mathematician Adrien-Marie Legendre in 1805, is a statistical technique used for the analysis and modelling of a linear relationship between a continuous dependent variable and one or more independent variables (which can be continuous or categorical). Put simply, if the relationship between two variables is approximately linear, then a straight line can be fit to the data in order to model the relationship. Linear regression is used for both prediction and statistical inference. The regression equation (i.e. the equation of a straight line) using one covariate takes the following form
+**Ordinary Least Squares (OLS) linear regression**, first developed by the French mathematician Adrien-Marie Legendre in 1805, is a statistical technique used for the analysis and modelling of a linear relationship between a dependent variable and one or more independent variables (which can be continuous or categorical). Put simply, if the relationship between two variables is approximately linear, then a straight line can be fit to the data in order to model the relationship. Linear regression can be used for both prediction and statistical inference about the larger population or process. The regression equation (i.e. the equation of a straight line) using one covariate takes the following two-parameter form
 
 $$
 y = a + bx + e  
@@ -105,10 +105,11 @@ intercept <- mean(y) - (slope * mean(x))
 The **model assumptions** associated with the use of linear regression are:
   
 1. A linear relationship between the dependent variable and the covariate(s) of interest
-2. Residuals/errors of fit are normally distributed 
-3. No/little multicollinearity (which affects significance tests/VIFs can assess)
+2. Residuals/errors of fit are normally distributed across all values of the predictor
+3. No/little multicollinearity (which affects significance tests and parameter estimates)
 4. Homoscedasticity (constant variance in residuals/errors of fit)
 5. Outliers do not negatively impact the regression
+6. Residuals/errors of fit are independent
 
 We can test these assumptions using scatterplots, residual histograms, Q-Q plots, VIFs and residual variance plots. If the residuals are normally distributed, then the Q-Q plot should form a relatively straight line (focus on the centre section as the tails usually deviate). **The important thing to note is that we must always check the model assumptions**.
 
@@ -145,7 +146,7 @@ Note that *correlation does not imply causation*; it just allows one to quantify
 
 Another measure of correlation is **Spearman's Rank correlation coefficient**. This is the *non-parametric* version of Pearson's, which is *parametric*. Spearman's is less restrictive but both are associated with assumptions that are important to check. For Pearson's, both variables must be continuous, normally distributed and part of a random sample. For Spearman's, one or both variables can be continuous or ordinal, the relationship must be *monotonic*, and the variables must be part of a random sample. Thus, Spearman's rank quantifies the strength of the monotonic association between two variables while Pearson's quantifies the strength of a straight line association.
 
-If the relationship is non-linear, and linear regression is still desired, a common approach is to transform the response variable in order to coerce the relationship to one that approaches linearity. **It is also good practice to transform a skewed dependent variable to a more normal one as this reduces the impact of any outliers on the residuals**. Note that $$y_i = \beta_{0} + \beta_{1}x_{1} + e_i$$ is not the only two-parameter model for describing the relationship between a dependent variable and a single continuous explanatory variable. Model choice is vital and alternative options include transformations such as natural log, base ten log, exponential, square root, power law, cube root and inverse. The `mpg` and `disp` relationship is not linear but it can be coerced using a natural log transformation of the dependent variable `mpg`
+If the relationship is non-linear, and linear regression is still desired, a common approach is to transform the response variable in order to coerce the relationship to one that approaches linearity. This can also allow model assumptions to be met and logarithmic transforms are particularly useful as they differentially compress the spread at high and low values of the variable. **It is good practice to transform a skewed dependent variable to a more normal one as this reduces the impact of any outliers on the residuals**. Note that $$y_i = \beta_{0} + \beta_{1}x_{1} + e_i$$ is not the only two-parameter model for describing the relationship between a dependent variable and a single continuous explanatory variable. Model choice is vital and alternative options include transformations such as natural log, base ten log, exponential, square root, power law, cube root and inverse. The `mpg` and `disp` relationship is not linear but it can be coerced using a natural log transformation of the dependent variable `mpg`
 
 ```{r}
 # Scatterplot of log(mpg) vs. disp
@@ -186,13 +187,15 @@ linear_fit1 <- lm(log(mpg) ~ disp,
 summary(linear_fit1)
 ```
 
-Our maximum likelihood model above gives a five-number summary of the residual distribution. The goodness of fit can be quantified using the **residual standard error (RSE)**, which rarely differs from the **root mean squared error (RMSE)**, and the $r^2$ metric. The RMSE/RSE quantifies the variance of the model errors and is an absolute measure of fit with units identical to the response variable. **The goal of linear regression is to minimise the RMSE**. The *baseline* model is simply the mean of $y$ and forms a horizontal line through the data. The RMSE is mimimised by rotating this horizontal line until the slope that bests fit the data is found. 
+Our maximum likelihood model above gives a five-number summary of the residual distribution. The goodness of fit can be quantified using the **residual standard error (RSE)**, which rarely differs from the **root mean squared error (RMSE)**, and the $r^2$ metric. The RMSE/RSE quantifies the variance of the model errors and is an absolute measure of fit with units identical to the response variable. **The goal of linear regression is to minimise the sum of squared errors (SSE)**. The *baseline* model is simply the mean of $y$ and forms a horizontal line through the data. The RMSE is mimimised by rotating this horizontal line until the slope that bests fit the data is found. 
 
 The $r^2$ metric for a simple linear regression is the Pearson correlation coefficient, $r$, squared and it quantifies the proportion of variance in $y$ explained by the model. It is important to consider $r^2$ when using a linear regression model for prediction. **The RMSE and $r^2$ should also be assessed on any test set predictions**.
 
 What is the difference between the adjusted and multiple $r^2$ metrics given in the output? Adjusted $r^2$ should be used in multiple linear regression as it penalises for additional predictors which can increase $r^2$ even though there may be little association with the response variable.
 
 Looking at the model coefficients, we see both the intercept and engine displacement coefficient estimates have highly significant $p$-values. The $t$-value is a measure of a coefficient's "*signal-to-noise*" strength and is simply the estimate divided by its corresponding standard error. A large absolute $t$-value corresponds to a low $p$-value and a strong signal with the sign indicating the effect direction.
+
+If the value of the slope is large and its standard error is small, then we can be confident that it is different from zero not only in the sample, but also if we repeat the experiment on other samples. Regression analysis, therefore, can be used for **inference testing**.
 
 Note that there is also a global $p$-value which is highly significant. This $p$-value represents the statistical significance of the overall regression. There may be cases where insignificant covariates are present in a model but the overall regression is still statistically significant. In such cases, it is good to prune the model down to its simplest form (i.e. the principle of parsimony) using informed **backwards elimination**.
 
@@ -219,11 +222,11 @@ mtcars %>%
            y = 2.4)
 ```
 
-The variance about the line of best fit looks okay. We should now carefully check model assumptions. As we are dealing with just one covariate in simple linear regression, we do not need to check for multicollinearity. If it were a multiple linear regression, then we would use the `cor()` function and a suitable threshold like 0.7 or 0.8 for the collinear cut-off. We could also use **variance inflation factors** (VIFs) to identify the presence of collinearity. VIFs over 10 are cause for deep concern and VIFs over 4 need further investigation. VIFs around 1 are good. Minor outliers in the data do not cause a serious problem here.
+The variance about the line of best fit looks okay. We should now carefully check model assumptions. As we are dealing with just one covariate in simple linear regression, we do not need to check for multicollinearity. If it were a multiple linear regression, then we would use the `cor()` function and a suitable threshold like 0.7 or 0.8 for the collinear cut-off. We could also use **variance inflation factors (VIFs)** to identify the presence of collinearity. VIFs over 10 are cause for deep concern and VIFs over 4 need further investigation. VIFs around 1 are good. Minor outliers in the data do not cause a serious problem here.
 
 Passing the linear model to the `plot()` function returns a series of model diagnostic plots. We are mostly interested in the top two. The first plot allows us to check the homoscedasticity assumption (i.e. constant variance of the residuals); no "*fan*" pattern is obvious and we have a "*starry night sky*". The Q-Q plot allows us to check the normality of residual errors; most of the points are generally close to the diagonal so this assumption is also met.
 
-We do not need to investigate the other plots in the series but note that Cook's distance does provide useful information on the influence of any outliers that may be present.
+We should also investigate the fourth plot in the series as **Cook's distance** provides useful information on the influence of any outliers that may be present. Outliers that are further from the centre of the fitted line (i.e. lateral outliers) can be more troublesome. **Leverage** exerted on a fitted regression model is quantified using both Cook's distance and studentised residuals. A residual is standardised when it is divided by the standard deviation of all residuals in the sample. Cook's distance quantifies the combined change in both the slope and intercept as a whole when the point in question is removed. If any of these measures are relatively large, the outlier may be exerting undue leverage on the regression model. 
 
 ```{r}
 # Model diagnostics
@@ -250,7 +253,7 @@ intercept <- mean(log(mtcars$mpg)) - (slope * mean(mtcars$disp))
 intercept; slope
 ```
 
-Recall that **standard errors are unreliability measures**. Increasing the spread of the $x$ values reduces unreliability of the estimated slope. For the intercept, uncertainty declines with increasing sample size and confidence in predictions made with linear regression declines with the square of the distance between the mean value of $x$ and the value of $x$ where the prediction is to be made. Thus, when the origin of the graph is far from the mean value of $x$, the standard error of the intercept will be large, and vice versa.
+Recall that **standard errors are unreliability measures**. Increasing the sample size and spread of the $x$ values reduces unreliability of the estimated slope while a higher SSE increases unreliability. For the intercept, unreliability declines with increasing sample size and confidence in predictions made with linear regression declines with the square of the distance between the mean value of $x$ and the value of $x$ where the prediction is to be made. Thus, when the origin of the graph is far from the mean value of $x$, the standard error of the intercept will be large, and vice versa.
 
 ## Model interpretation 
 
